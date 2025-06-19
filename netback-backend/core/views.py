@@ -1,0 +1,860 @@
+import re
+import shutil
+import subprocess
+from datetime import time
+
+from django.utils import timezone
+from django.db import IntegrityError
+from django.db.models import Max
+
+from rest_framework import status, viewsets
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from utils.classification_engine import (HostClassifier, get_hosts_from_csv, get_hosts_from_zabbix)
+from utils.env import get_zabbix_token, get_zabbix_url
+from utils.zabbix_manager import ZabbixManager
+
+from .models import (Area, Backup, BackupDiff, BackupSchedule, BackupStatus,
+                     ClassificationRuleSet, Country, DeviceType, Manufacturer,
+                     NetworkDevice, Site, UserSystem, VaultCredential)
+from .network_util.backup import backupDevice
+from .network_util.comparison import compareBackups
+from .network_util.comparison import compareSpecificBackups as specificCompareBackups
+from .network_util.executor import executeCommandOnDevice
+from .permissions import IsAdmin, IsOperator, IsViewer
+from .serializers import (AreaSerializer, BackupDiffSerializer,
+                          BackupSerializer, ClassificationRuleSetSerializer,
+                          CountrySerializer, DeviceTypeSerializer,
+                          ManufacturerSerializer, NetworkDeviceSerializer,
+                          SiteSerializer, UserSystemSerializer,
+                          VaultCredentialSerializer)
+
+
+# **********************************************************
+# 👤 Gestión de Usuarios
+# **********************************************************
+class UserSystemViewSet(viewsets.ModelViewSet):
+    """API para gestionar usuarios"""
+
+    queryset = UserSystem.objects.all()
+    serializer_class = UserSystemSerializer
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [IsAuthenticated()]
+        elif self.action in ["create"]:
+            return [IsAdmin()]
+        elif self.action in ["update", "partial_update"]:
+            return (
+                [IsAdmin()]
+                if self.request.user.role == "admin" # type: ignore
+                else [IsAuthenticated()]
+            )
+        elif self.action in ["destroy"]:
+            return [IsAdmin()]
+        return super().get_permissions()
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        """Devuelve la información del usuario autenticado"""
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+
+
+class VaultCredentialViewSet(viewsets.ModelViewSet):
+    queryset = VaultCredential.objects.all()
+    serializer_class = VaultCredentialSerializer
+    permission_classes = [IsOperator]
+
+
+# **********************************************************
+# 📍 Vista para Países
+# **********************************************************
+class CountryViewSet(viewsets.ModelViewSet):
+    queryset = Country.objects.all().order_by("name")
+    serializer_class = CountrySerializer
+    permission_classes = [IsAuthenticated]
+
+
+# **********************************************************
+# 📍 Vista para Sitios
+# **********************************************************
+class SiteViewSet(viewsets.ModelViewSet):
+    serializer_class = SiteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Permite filtrar sitios por ID de país (?country_id=...)"""
+        queryset = Site.objects.select_related("country").all().order_by("name")
+        country_id = self.request.query_params.get("country_id")# type: ignore
+        if country_id:
+            queryset = queryset.filter(country__id=country_id)
+        return queryset
+
+
+# **********************************************************
+# 📍 Vista para Áreas
+# **********************************************************
+class AreaViewSet(viewsets.ModelViewSet):
+    """API para gestionar áreas, filtrando por sitio o país"""
+    serializer_class = AreaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Permite filtrar áreas por sitio o país (?site_id=... o ?country_id=...)"""
+        queryset = (
+            Area.objects.select_related("site", "site__country").all().order_by("name")
+        )
+        site_id = self.request.query_params.get("site_id")# type: ignore
+        country_id = self.request.query_params.get("country_id")# type: ignore
+
+        if site_id:
+            queryset = queryset.filter(site__id=site_id)
+        elif country_id:
+            queryset = queryset.filter(site__country__id=country_id)
+
+        return queryset
+
+
+# **********************************************************
+# 🔌 Gestión de Equipos
+# **********************************************************
+class NetworkDeviceViewSet(viewsets.ModelViewSet):
+    queryset = NetworkDevice.objects.all()
+    serializer_class = NetworkDeviceSerializer
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [IsViewer()]
+        elif self.action in ["create"]:
+            return [IsOperator()]
+        elif self.action in ["update", "partial_update", "destroy"]:
+            return [IsAdmin()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        """Valida que solo se use una credencial al crear un equipo"""
+        if serializer.validated_data.get("vaultCredential") and (
+            serializer.validated_data.get("customUser")
+            or serializer.validated_data.get("customPass")
+        ):
+            return Response(
+                {
+                    "error": "No puedes usar credenciales propias y Vault al mismo tiempo."
+                },
+                status=400,
+            )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        """Valida que solo se use una credencial al actualizar un equipo"""
+        if serializer.validated_data.get("vaultCredential") and (
+            serializer.validated_data.get("customUser")
+            or serializer.validated_data.get("customPass")
+        ):
+            return Response(
+                {
+                    "error": "No puedes usar credenciales propias y Vault al mismo tiempo."
+                },
+                status=400,
+            )
+        serializer.save()
+
+
+# **********************************************************
+# 📍 Gestión de Fabricantes (Manufacturers)
+# **********************************************************
+class ManufacturerViewSet(viewsets.ModelViewSet):
+    queryset = Manufacturer.objects.all().order_by("name")
+    serializer_class = ManufacturerSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# **********************************************************
+# 📍 Gestión de Tipos de Equipos (DeviceType)
+# **********************************************************
+class DeviceTypeViewSet(viewsets.ModelViewSet):
+    queryset = DeviceType.objects.all().order_by("name")
+    serializer_class = DeviceTypeSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# **********************************************************
+# 📂 Gestión de Backups
+# **********************************************************
+class BackupViewSet(viewsets.ModelViewSet):
+    queryset = Backup.objects.all()
+    serializer_class = BackupSerializer
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [IsViewer()]
+        elif self.action in ["create"]:
+            return [IsOperator()]
+        elif self.action in ["update", "partial_update", "destroy"]:
+            return [IsAdmin()]
+        return super().get_permissions()
+
+
+class BackupDiffViewSet(viewsets.ModelViewSet):
+    queryset = BackupDiff.objects.all()
+    serializer_class = BackupDiffSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# **********************************************************
+# 📂 Clasificación de Dispositivos
+# **********************************************************
+class ClassificationRuleSetViewSet(viewsets.ModelViewSet):
+    queryset = ClassificationRuleSet.objects.all().order_by("-createdAt")
+    serializer_class = ClassificationRuleSetSerializer
+    permission_classes = [IsAdmin]
+
+# **********************************************************
+# 🏥 Vista de Salud del Backend
+# **********************************************************
+class HealthCheckView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """
+        Ruta de salud simple para verificar si el backend está funcionando.
+        """
+        try:
+            return Response({
+                "status": "ok",
+                "message": "Backend is up and running!",
+                "timestamp": timezone.now().isoformat()
+            })
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": str(e)
+            }, status=500)
+
+
+##FUNCIONES
+# **********************************************************
+# 📊 Estado de Backups
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def getBackupStatus(request, pk):
+    """Obtener el estado de los respaldos del dispositivo"""
+    try:
+        device = NetworkDevice.objects.get(pk=pk)
+        statuses = BackupStatus.objects.filter(device=device).order_by("-backupTime")
+        data = [
+            {"status": s.status, "message": s.message, "backupTime": s.timestamp}
+            for s in statuses
+        ]
+        return Response({"device": device.hostname, "statuses": data})
+    except NetworkDevice.DoesNotExist:
+        return Response({"error": "Device not found"}, status=404)
+
+
+# **********************************************************
+# 📊 Comparación de Backups
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_last_backups(request):
+    """Obtener el último respaldo de cada dispositivo de red, incluyendo el id del backup."""
+    # Obtenemos, para cada dispositivo, la fecha máxima de respaldo.
+    latest_backups = Backup.objects.values("device_id").annotate(
+        last_backup=Max("backupTime")
+    )
+    devices_with_backup = []
+
+    for backup in latest_backups:
+        # Obtenemos el dispositivo correspondiente.
+        device = NetworkDevice.objects.get(id=backup["device_id"])
+        # Buscamos el backup que tenga la fecha máxima registrada.
+        latest_backup_obj = Backup.objects.get(
+            device_id=backup["device_id"], backupTime=backup["last_backup"]
+        )
+        devices_with_backup.append(
+            {
+                "id": device.id,
+                "hostname": device.hostname,
+                "ipAddress": device.ipAddress,
+                "lastBackup": backup["last_backup"],
+                "backup_id": latest_backup_obj.id,
+            }
+        )
+    return Response(devices_with_backup)
+
+
+# **********************************************************
+# 📊 Obtener historial de backups
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def getBackupHistory(request, pk):
+    """Obtener historial de respaldos de un dispositivo."""
+    try:
+        device = NetworkDevice.objects.get(pk=pk)
+        backups = Backup.objects.filter(device=device).order_by("backupTime")
+        data = [
+            {"id": backup.id, "backupTime": backup.backupTime} for backup in backups
+        ]
+        return Response(data)
+    except NetworkDevice.DoesNotExist:
+        return Response({"error": "Device not found"}, status=404)
+
+
+# **********************************************************
+# 📂 Respaldo de Dispositivos
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def backupDeviceView(request, pk):
+    """Realizar un respaldo de un dispositivo."""
+    try:
+        device = NetworkDevice.objects.get(pk=pk)
+        result = backupDevice(device)
+        return Response(result)
+    except NetworkDevice.DoesNotExist:
+        return Response({"error": "Device not found"}, status=404)
+
+
+# **********************************************************
+### Comparación de Backups
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compareBackupsView(request, pk):
+    """Comparar los dos últimos respaldos de un dispositivo."""
+    try:
+        device = NetworkDevice.objects.get(pk=pk)
+        result = compareBackups(device)
+
+        if "error" in result:
+            return Response(result, status=400)
+
+        return Response(
+            {
+                "success": result["success"],
+                "backupDiffId": result["backupDiffId"],
+                "changes": result["changes"],
+            }
+        )
+    except NetworkDevice.DoesNotExist:
+        return Response({"error": "Device not found"}, status=404)
+
+
+# **********************************************************
+# Comparación de Backups Específicos
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compareSpecificBackups(request, backupOldId, backupNewId):
+    """Comparar dos respaldos específicos del mismo dispositivo asegurando el orden correcto."""
+    try:
+        backup1 = Backup.objects.get(id=backupOldId)
+        backup2 = Backup.objects.get(id=backupNewId)
+
+        # Validar que ambos backups pertenecen al mismo dispositivo
+        if backup1.device.id != backup2.device.id:
+            return Response(
+                {
+                    "success": False,
+                    "error": "Ambos backups deben pertenecer al mismo dispositivo",
+                },
+                status=400,
+            )
+
+        # Ordenar los backups por su fecha
+        backupOld, backupNew = (
+            (backup2, backup1)
+            if backup1.backupTime > backup2.backupTime
+            else (backup1, backup2)
+        )
+
+        # Ejecutar la comparación
+        result = specificCompareBackups(backupOld, backupNew)
+
+        # ✅ Validar que result tenga "success"
+        if not isinstance(result, dict) or "success" not in result:
+            return Response(
+                {"success": False, "error": "Error desconocido al comparar backups"},
+                status=500,
+            )
+
+        # ✅ Si la comparación falló, devolver error
+        if not result["success"]:
+            return Response(result, status=400)
+
+        # ✅ Validar `backupDiffId` antes de acceder a él
+        backup_diff_id = result.get("backupDiffId")
+        if not backup_diff_id:
+            return Response(
+                {"success": False, "error": "Error al generar backupDiffId"}, status=500
+            )
+
+        # ✅ Devolver la respuesta correcta
+        return Response(
+            {
+                "success": True,
+                "backupDiffId": backup_diff_id,
+                "changes": result["changes"],
+            }
+        )
+
+    except Backup.DoesNotExist:
+        return Response(
+            {"success": False, "error": "Uno o ambos backups no fueron encontrados"},
+            status=404,
+        )
+
+
+# **********************************************************
+# 💻 Comandos y Diagnóstico
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def executeCommand(request, pk):
+    """Ejecutar un comando en el dispositivo"""
+    try:
+        device = NetworkDevice.objects.get(pk=pk)
+        command = request.data.get("command")
+        if not command:
+            return Response({"error": "Command is required"}, status=400)
+        result = executeCommandOnDevice(device, command)
+        return Response({"result": result})
+    except NetworkDevice.DoesNotExist:
+        return Response({"error": "Device not found"}, status=404)
+
+
+# **********************************************************
+# Ping a Dispositivo
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ping_device(request):
+    """Ejecuta un ping a un dispositivo desde el servidor"""
+    ip = request.data.get("ip")
+    
+    # Validación mejorada de IP
+    if not ip or not is_valid_ip(ip):
+        return Response(
+            {
+                "status": "error", 
+                "message": "Debes proporcionar una dirección IP válida."
+            },
+            status=400,
+        )
+
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "2", "-W", "2", ip],  # Timeout por paquete de 2 segundos
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        # Analizar la salida para información más detallada
+        output = result.stdout.lower()
+        
+        if result.returncode == 0:
+            # Extraer estadísticas del ping
+            stats = parse_ping_stats(output)
+            return Response({
+                "status": "success",
+                "data": {
+                    "ip": ip,
+                    "reachable": True,
+                    "message": "✅ Dispositivo activo",
+                    "stats": stats
+                }
+            })
+        else:
+            # Determinar tipo específico de fallo
+            error_msg = "❌ No se pudo alcanzar el dispositivo"
+            if "unknown host" in output:
+                error_msg = "❌ Host desconocido"
+            elif "network is unreachable" in output:
+                error_msg = "❌ Red inalcanzable"
+            
+            return Response({
+                "status": "error",
+                "data": {
+                    "ip": ip,
+                    "reachable": False,
+                    "message": error_msg
+                }
+            })
+            
+    except subprocess.TimeoutExpired:
+        return Response(
+            {
+                "status": "error",
+                "message": "⌛ Tiempo de espera agotado al intentar alcanzar el dispositivo"
+            },
+            status=408
+        )
+    except Exception as e:
+        return Response(
+            {
+                "status": "error",
+                "message": f"⚠ Error al ejecutar ping: {str(e)}"
+            },
+            status=500
+        )
+
+def is_valid_ip(ip):
+    """Valida que la IP tenga un formato correcto"""
+    try:
+        parts = ip.split('.')
+        return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+def parse_ping_stats(output):
+    """Extrae estadísticas del resultado del ping"""
+    try:
+        # Buscar la línea de estadísticas
+        stats_line = [line for line in output.split('\n') if 'packets transmitted' in line][0]
+        transmitted = int(stats_line.split()[0])
+        received = int(stats_line.split()[3])
+        return {
+            "transmitted": transmitted,
+            "received": received,
+            "loss_percentage": ((transmitted - received) / transmitted) * 100
+        }
+    except (IndexError, ValueError):
+        return {}
+
+
+# **********************************************************
+# 💻 Gestion de Celery (Automatisacion de respaldos)
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def update_backup_schedule(request):
+
+    new_time = request.data.get("scheduled_time")
+    if not new_time:
+        return Response(
+            {"error": "Debes proporcionar una hora en formato HH:MM."}, status=400
+        )
+
+    try:
+        # Convertir a formato TimeField
+        hours, minutes = map(int, new_time.split(":"))
+        scheduled_time = time(hours, minutes)
+
+        # Buscar si ya existe un registro, si no, crearlo con UUID
+        schedule, created = BackupSchedule.objects.get_or_create(
+            defaults={"scheduled_time": scheduled_time}  # Evita el error de NULL
+        )
+
+        # Si ya existía, actualiza la hora
+        if not created:
+            schedule.scheduled_time = scheduled_time
+            schedule.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": f"Respaldo programado a las {scheduled_time}",
+                "schedule_id": str(schedule.id),  # Devolver el UUID
+            }
+        )
+    except ValueError:
+        return Response(
+            {"error": "Formato de hora inválido. Usa HH:MM (24h)."}, status=400
+        )
+
+
+# **********************************************************
+# Obtener la hora programada del respaldo automático
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def get_backup_schedule(request):
+    """Obtener la hora programada del respaldo automático"""
+    try:
+        schedule = BackupSchedule.objects.first()  # Obtener el primer registro
+        if schedule:
+            return Response(
+                {"scheduled_time": schedule.scheduled_time.strftime("%H:%M")}
+            )
+        return Response({"scheduled_time": None}, status=404)
+    except Exception as e:
+        return Response({"error": f"Error al obtener la hora: {str(e)}"}, status=500)
+
+
+# **********************************************************
+# Estado de Conectividad con Zabbix
+# **********************************************************
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def zabbix_connectivity_status(request):
+    zabbix_host = (
+        get_zabbix_url().replace("https://", "").replace("http://", "").split("/")[0]
+    )
+
+    # Ejecutar ping
+    ping_proc = subprocess.run(
+        ["ping", "-c", "2", zabbix_host], capture_output=True, text=True
+    )
+    ping_output = ping_proc.stdout
+    pass_packets = ping_output.count("bytes from")
+    drop_packets = 2 - pass_packets
+
+    # Ejecutar traceroute
+    trace_hops = []
+    traceroute_success = False
+
+    if shutil.which("traceroute"):
+        try:
+            traceroute_proc = subprocess.run(
+                ["traceroute", "-m", "10", zabbix_host], capture_output=True, text=True
+            )
+            trace_hops = traceroute_proc.stdout.strip().splitlines()
+
+            # Filtrar solo líneas de saltos
+            hop_lines = [line for line in trace_hops if re.match(r"^\s*\d+", line)]
+
+            # Contar rachas consecutivas de saltos fallidos ("* * *")
+            star_streak = 0
+            max_star_streak = 0
+
+            for line in hop_lines[1:]:  # Ignorar el primer salto (gateway)
+                if "*" in line and not re.search(
+                    r"\d+\.\d+\.\d+\.\d+|[a-zA-Z\-]", line
+                ):
+                    star_streak += 1
+                    max_star_streak = max(max_star_streak, star_streak)
+                else:
+                    star_streak = 0
+
+            # Si hay 3 o más saltos consecutivos fallidos, consideramos fallo
+            traceroute_success = max_star_streak < 3
+
+        except Exception as e:
+            trace_hops = [f"Error al ejecutar traceroute: {str(e)}"]
+    else:
+        trace_hops = ["❌ 'traceroute' no está instalado en el sistema"]
+
+    # Evaluar si intentar conexión con Zabbix
+    activate = False
+    zabbix_api_status = "skipped"
+    connect_attempted = False
+
+    if pass_packets > 0 or traceroute_success:
+        connect_attempted = True
+        try:
+            zm = ZabbixManager(url=get_zabbix_url(), token=get_zabbix_token())
+            activate = zm.connect()
+            zabbix_api_status = "ok" if activate else "error"
+        except Exception as e:
+            print(f"❌ Error al conectar con Zabbix: {e}")
+            zabbix_api_status = "error"
+
+    return Response(
+        {
+            "activate": activate,
+            "zabbix_api_status": zabbix_api_status,
+            "connect_attempted": connect_attempted,
+            "ping": {"drop": drop_packets, "pass": pass_packets},
+            "tracert": trace_hops,
+        }
+    )
+
+
+# **********************************************************
+# Clasificación de Hosts desde Zabbix
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def from_zabbix_bulk_view(request):
+    """
+    Clasifica hosts directamente obtenidos desde Zabbix usando un conjunto de reglas.
+    Agrega el ID de area, vaultCredential, manufacturer y deviceType con estructura ordenada.
+    """
+    rule_set_id = request.data.get("ruleSetId")
+    if not rule_set_id:
+        return Response(
+            {"detail": "Falta 'ruleSetId' en el cuerpo de la solicitud."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        rule_set = ClassificationRuleSet.objects.get(id=rule_set_id)
+    except ClassificationRuleSet.DoesNotExist:
+        return Response(
+            {"detail": "El conjunto de reglas no existe."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        hosts = get_hosts_from_zabbix()
+    except ValueError as e:
+        return Response({"detail": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    classifier = HostClassifier(rule_set.rules)
+    classified = classifier.classify_all(hosts)
+
+    for host in classified:
+        # Vault Credential
+        host["vaultCredential"] = (
+            str(rule_set.vaultCredential.id) if rule_set.vaultCredential else None
+        )
+
+        # Manufacturer
+        name_manufacturer = host.get("manufacturer", "Desconocido")
+        manufacturer_obj = Manufacturer.objects.filter(
+            name__iexact=name_manufacturer
+        ).first()
+        host["manufacturer"] = {
+            "id": str(manufacturer_obj.id) if manufacturer_obj else None,
+            "name": name_manufacturer,
+        }
+
+        # Device Type
+        name_device_type = host.get("deviceType", "Desconocido")
+        device_type_obj = DeviceType.objects.filter(
+            name__iexact=name_device_type
+        ).first()
+        host["deviceType"] = {
+            "id": str(device_type_obj.id) if device_type_obj else None,
+            "name": name_device_type,
+        }
+
+    return Response(classified, status=status.HTTP_200_OK)
+
+
+# **********************************************************
+# Clasificación de Hosts desde CSV
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def from_csv_bulk_view(request):
+    """
+    Clasifica hosts subidos vía archivo CSV usando un conjunto de reglas.
+    """
+    rule_set_id = request.data.get("ruleSetId")
+    csv_file = request.FILES.get("file")
+
+    if not rule_set_id:
+        return Response(
+            {"detail": "Falta 'ruleSetId'."}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if not csv_file:
+        return Response(
+            {"detail": "Debe subir un archivo CSV en el campo 'file'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        rule_set = ClassificationRuleSet.objects.get(id=rule_set_id)
+    except ClassificationRuleSet.DoesNotExist:
+        return Response(
+            {"detail": "El conjunto de reglas no existe."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        hosts = get_hosts_from_csv(csv_file)
+    except Exception as e:
+        return Response(
+            {"detail": f"Error procesando CSV: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    classifier = HostClassifier(rule_set.rules)
+    classified = classifier.classify_all(hosts)
+
+    return Response(classified, status=status.HTTP_200_OK)
+
+
+# **********************************************************
+# Salvar Host clasificados
+# **********************************************************
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_save_classified_hosts(request):
+    """
+    Guarda múltiples hosts clasificados como NetworkDevice en la base de datos.
+    """
+    hosts_data = request.data.get("hosts", [])
+    created = 0
+    errors = []
+
+    for host in hosts_data:
+        hostname = host.get("hostname")
+        ip = host.get("ipAddress")
+        model = host.get("model")
+        manufacturer_id = host.get("manufacturer")
+        device_type_id = host.get("deviceType")
+        area_id = host.get("area")
+        vault_id = host.get("vaultCredential")
+
+        # Validación básica
+        if (
+            not hostname
+            or not ip
+            or not model
+            or not manufacturer_id
+            or not device_type_id
+            or not area_id
+        ):
+            errors.append({"hostname": hostname, "error": "Faltan campos requeridos."})
+            continue
+
+        # Validar relaciones
+        manufacturer = Manufacturer.objects.filter(id=manufacturer_id).first()
+        device_type = DeviceType.objects.filter(id=device_type_id).first()
+        area = Area.objects.filter(id=area_id).first()
+        vault = (
+            VaultCredential.objects.filter(id=vault_id).first() if vault_id else None
+        )
+
+        if not manufacturer or not device_type or not area:
+            errors.append(
+                {
+                    "hostname": hostname,
+                    "error": "UUID inválido en manufacturer, deviceType o area.",
+                }
+            )
+            continue
+
+        # Verificar duplicado
+        if (
+            NetworkDevice.objects.filter(hostname=hostname).exists()
+            or NetworkDevice.objects.filter(ipAddress=ip).exists()
+        ):
+            errors.append(
+                {
+                    "hostname": hostname,
+                    "error": "Ya existe un dispositivo con ese hostname o IP.",
+                }
+            )
+            continue
+
+        # Crear dispositivo
+        try:
+            NetworkDevice.objects.create(
+                hostname=hostname,
+                ipAddress=ip,
+                model=model,
+                manufacturer=manufacturer,
+                deviceType=device_type,
+                area=area,
+                VaultCredential=vault,
+            )
+            created += 1
+        except IntegrityError as e:
+            errors.append({"hostname": hostname, "error": str(e)})
+
+    return Response(
+        {"created": created, "errors": errors},
+        status=status.HTTP_201_CREATED if created > 0 else status.HTTP_400_BAD_REQUEST,
+    )
+

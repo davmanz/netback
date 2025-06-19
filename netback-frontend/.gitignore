@@ -1,0 +1,81 @@
+# ==============================
+# General
+# ==============================
+.DS_Store
+Thumbs.db
+*.log
+*.env
+.env.*
+!.env.example
+*.pyc
+*.pyo
+__pycache__/
+*.swp
+
+# ==============================
+# Node.js / React (frontend o backend)
+# ==============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/dist
+/build
+/.next
+/.cache
+/.parcel-cache
+coverage/
+*.local
+*.tsbuildinfo
+
+# ==============================
+# Django / Python
+# ==============================
+*.pyc
+*.pyo
+__pycache__/
+media/
+staticfiles/
+
+# Virtual envs
+venv/
+.env/
+ENV/
+env/
+.venv/
+
+# Django migrations (opcional, si regeneras)
+**/migrations/*.pyc
+**/migrations/*.pyo
+**/migrations/__pycache__/
+# Puedes ignorar las carpetas de migrations, pero NO los archivos __init__.py
+
+# ==============================
+# Docker
+# ==============================
+# Ignora archivos temporales de Docker builds
+.dockerignore
+docker-compose.override.yml
+
+# ==============================
+# IDEs/Editors
+# ==============================
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# ==============================
+# Otros
+# ==============================
+*.bak
+*.tmp
+*.temp
+*.orig
+
+# ==============================
+# Mac/Linux swap files
+# ==============================
+*~
+*.swp
+*.swo
