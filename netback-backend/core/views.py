@@ -606,47 +606,12 @@ def zabbix_connectivity_status(request):
     pass_packets = ping_output.count("bytes from")
     drop_packets = 2 - pass_packets
 
-    # Ejecutar traceroute
-    trace_hops = []
-    traceroute_success = False
-
-    if shutil.which("traceroute"):
-        try:
-            traceroute_proc = subprocess.run(
-                ["traceroute", "-m", "10", zabbix_host], capture_output=True, text=True
-            )
-            trace_hops = traceroute_proc.stdout.strip().splitlines()
-
-            # Filtrar solo líneas de saltos
-            hop_lines = [line for line in trace_hops if re.match(r"^\s*\d+", line)]
-
-            # Contar rachas consecutivas de saltos fallidos ("* * *")
-            star_streak = 0
-            max_star_streak = 0
-
-            for line in hop_lines[1:]:  # Ignorar el primer salto (gateway)
-                if "*" in line and not re.search(
-                    r"\d+\.\d+\.\d+\.\d+|[a-zA-Z\-]", line
-                ):
-                    star_streak += 1
-                    max_star_streak = max(max_star_streak, star_streak)
-                else:
-                    star_streak = 0
-
-            # Si hay 3 o más saltos consecutivos fallidos, consideramos fallo
-            traceroute_success = max_star_streak < 3
-
-        except Exception as e:
-            trace_hops = [f"Error al ejecutar traceroute: {str(e)}"]
-    else:
-        trace_hops = ["❌ 'traceroute' no está instalado en el sistema"]
-
     # Evaluar si intentar conexión con Zabbix
     activate = False
     zabbix_api_status = "skipped"
     connect_attempted = False
 
-    if pass_packets > 0 or traceroute_success:
+    if pass_packets > 0:
         connect_attempted = True
         try:
             zm = ZabbixManager(url=get_zabbix_url(), token=get_zabbix_token())
@@ -661,11 +626,9 @@ def zabbix_connectivity_status(request):
             "activate": activate,
             "zabbix_api_status": zabbix_api_status,
             "connect_attempted": connect_attempted,
-            "ping": {"drop": drop_packets, "pass": pass_packets},
-            "tracert": trace_hops,
+            "ping": {"drop": drop_packets, "pass": pass_packets}
         }
     )
-
 
 # **********************************************************
 # Clasificación de Hosts desde Zabbix

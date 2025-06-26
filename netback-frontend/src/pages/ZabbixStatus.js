@@ -7,10 +7,6 @@ import {
   CircularProgress,
   Alert,
   Chip,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
   Button,
 } from "@mui/material";
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
@@ -135,28 +131,6 @@ const ZabbixStatus = () => {
               </Typography>
             </Box>
           </Paper>
-
-          {status.tracert && status.tracert.length > 0 && (
-            <Paper elevation={3} sx={{ p: 3 }}>
-              <Typography variant="h6">Ruta de Red (Traceroute)</Typography>
-              <Divider sx={{ my: 1 }} />
-              <List dense>
-                {status.tracert.map((line, index) => (
-                  <ListItem key={index}>
-                    <ListItemText 
-                      primary={line}
-                      sx={{ 
-                        '& .MuiTypography-root': { 
-                          fontFamily: 'monospace',
-                          fontSize: '0.9rem'
-                        } 
-                      }}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </Paper>
-          )}
         </>
       )}
     </Box>
