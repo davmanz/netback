@@ -10,25 +10,81 @@ import {
   CircularProgress,
   Snackbar,
   Alert,
+  Box,
+  InputAdornment,
+  IconButton,
 } from "@mui/material";
+import { Visibility, VisibilityOff, Router, Security } from "@mui/icons-material";
 
 const styles = {
   container: {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    height: "100vh",
-    backgroundColor: "#f5f5f5"
+    minHeight: "100vh",
+    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    padding: 2
   },
   card: {
-    width: 350,
-    padding: 3,
+    width: { xs: "90%", sm: 400 },
+    maxWidth: 400,
+    borderRadius: 3,
+    boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
+    backdropFilter: "blur(10px)",
+    background: "rgba(255,255,255,0.95)"
+  },
+  cardContent: {
+    padding: 4,
+    "&:last-child": {
+      paddingBottom: 4
+    }
+  },
+  header: {
     textAlign: "center",
-    boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+    marginBottom: 3
+  },
+  icon: {
+    fontSize: 48,
+    color: "#667eea",
+    marginBottom: 1
+  },
+  title: {
+    fontWeight: 600,
+    color: "#2c3e50",
+    marginBottom: 0.5
+  },
+  subtitle: {
+    color: "#7f8c8d",
+    fontSize: "0.9rem"
+  },
+  textField: {
+    "& .MuiOutlinedInput-root": {
+      borderRadius: 2,
+      "&:hover .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#667eea"
+      },
+      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+        borderColor: "#667eea"
+      }
+    }
   },
   button: {
-    marginTop: 2,
-    height: 42
+    marginTop: 3,
+    height: 48,
+    borderRadius: 2,
+    fontSize: "1rem",
+    fontWeight: 600,
+    background: "linear-gradient(45deg, #667eea 30%, #764ba2 90%)",
+    "&:hover": {
+      background: "linear-gradient(45deg, #5a6fd8 30%, #6a4190 90%)",
+      boxShadow: "0 4px 15px rgba(102, 126, 234, 0.4)"
+    },
+    "&:disabled": {
+      background: "#e0e0e0"
+    }
+  },
+  form: {
+    width: "100%"
   }
 };
 
@@ -38,6 +94,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [usernameError, setUsernameError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const validateUsername = (value) => {
@@ -87,17 +144,28 @@ const Login = () => {
     }
   };
 
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
   return (
-    <div style={styles.container}>
+    <Box sx={styles.container}>
       <Card sx={styles.card}>
-        <CardContent>
-          <Typography variant="h5" gutterBottom>
-            Iniciar Sesión
-          </Typography>
-          <form onSubmit={handleLogin}>
+        <CardContent sx={styles.cardContent}>
+          <Box sx={styles.header}>
+            <Router sx={styles.icon} />
+            <Typography variant="h4" sx={styles.title}>
+              NetBackup Pro
+            </Typography>
+            <Typography variant="body2" sx={styles.subtitle}>
+              Sistema de Respaldo de Equipos de Red
+            </Typography>
+          </Box>
+
+          <Box component="form" onSubmit={handleLogin} sx={styles.form}>
             <TextField
               fullWidth
-              label="Usuario o Correo"
+              label="Usuario"
               name="username"
               variant="outlined"
               margin="normal"
@@ -107,47 +175,76 @@ const Login = () => {
               error={Boolean(usernameError)}
               helperText={usernameError}
               autoComplete="username"
+              sx={styles.textField}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Security color="action" />
+                  </InputAdornment>
+                ),
+              }}
             />
+            
             <TextField
               fullWidth
               label="Contraseña"
               name="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               variant="outlined"
               margin="normal"
               value={formData.password}
               onChange={handleChange}
               required
               autoComplete="current-password"
+              sx={styles.textField}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={togglePasswordVisibility}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
+            
             <Button
               type="submit"
               variant="contained"
-              color="primary"
               fullWidth
-              disabled={loading}
+              disabled={loading || Boolean(usernameError)}
               sx={styles.button}
             >
-              {loading ? <CircularProgress size={24} color="inherit" /> : "Iniciar Sesión"}
+              {loading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                "Iniciar Sesión"
+              )}
             </Button>
-          </form>
+          </Box>
         </CardContent>
       </Card>
 
       <Snackbar
         open={openSnackbar}
-        autoHideDuration={3000}
+        autoHideDuration={4000}
         onClose={() => setOpenSnackbar(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
         <Alert
           severity="error"
           onClose={() => setOpenSnackbar(false)}
           variant="filled"
+          sx={{ borderRadius: 2 }}
         >
           {error}
         </Alert>
       </Snackbar>
-    </div>
+    </Box>
   );
 };
 

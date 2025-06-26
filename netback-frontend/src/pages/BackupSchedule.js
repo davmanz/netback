@@ -27,7 +27,7 @@ const BackupSchedule = () => {
     error: "",
   });
 
-  const [confirmOpen, setConfirmOpen] = useState(false); // ✅ nuevo estado
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     fetchScheduledTime();

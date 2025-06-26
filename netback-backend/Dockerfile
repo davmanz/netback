@@ -21,7 +21,6 @@ RUN apt update && apt install -y --no-install-recommends \
     openssh-client \
     curl \
     gcc libpq-dev \
-    traceroute \
     iputils-ping \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

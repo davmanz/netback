@@ -332,6 +332,8 @@ def compareBackupsView(request, pk):
         device = NetworkDevice.objects.get(pk=pk)
         result = compareBackups(device)
 
+        print(f'success {result["success"]} backupDiffId {result["backupDiffId"]} changes {result["changes"]}')
+
         if "error" in result:
             return Response(result, status=400)
 

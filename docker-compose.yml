@@ -21,9 +21,11 @@ services:
     env_file:
       - netback-env/.env
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./data/pgdata:/var/lib/postgresql/data
     networks:
       - netback-net
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "netback"]
       interval: 10s
@@ -148,6 +150,8 @@ services:
         condition: service_healthy
     networks:
       - netback-net
+    ports:
+      - "8080:8080"
     restart: unless-stopped
     logging:
       driver: "json-file"
