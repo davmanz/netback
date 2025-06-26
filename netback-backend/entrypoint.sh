@@ -37,7 +37,7 @@ trap cleanup EXIT
 log_info "🔍 Verificando variables de entorno..."
 
 # Validación completa de variables requeridas al inicio
-required_vars=("DB_HOST" "DB_PORT" "SECRET_KEY" "ENCRYPTION_KEY_VAULT")
+required_vars=("POSTGRES_DB" "POSTGRES_HOST" "SECRET_KEY" "ENCRYPTION_KEY_VAULT")
 for var in "${required_vars[@]}"; do
   if [ -z "${!var:-}" ]; then
     log_error "❌ Error: La variable de entorno $var es requerida"
@@ -80,17 +80,19 @@ if [ "$db_check_result" = "DATA_EXISTS" ]; then
 elif [ "$db_check_result" = "NO_DATA" ]; then
   log_warning "⚠️ No se encontraron datos importantes. Ejecutando migraciones..."
   python manage.py makemigrations --noinput
+  
+  log_info "📦 Aplicando migraciones a la base de datos..."
+  python manage.py migrate --noinput
+
+  log_info "✅ Migraciones aplicadas correctamente."
+
+  # Inicializar datos
+  log_info "🔧 Inicializando datos del sistema..."
+  python manage.py init_data
 else
   log_error "❌ Error al verificar el estado de la base de datos: $db_check_result"
   exit 1
 fi
-
-log_info "📦 Aplicando migraciones a la base de datos..."
-python manage.py migrate --noinput
-
-# Inicializar datos
-log_info "🔧 Inicializando datos del sistema..."
-python manage.py init_data
 
 log_info "🚀 Iniciando servidor Django con Uvicorn..."
 exec uvicorn backend.asgi:application --host 0.0.0.0 --port 8000 --log-level info

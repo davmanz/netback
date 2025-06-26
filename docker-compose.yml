@@ -142,7 +142,7 @@ services:
     build: ./netback-proxy
     container_name: netback-proxy
     env_file:
-      - ./.env
+      - ./netback-env/.env
     depends_on:
       backend:
         condition: service_healthy
