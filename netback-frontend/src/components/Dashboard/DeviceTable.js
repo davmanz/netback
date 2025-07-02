@@ -159,7 +159,7 @@ const DeviceTable = ({ devices, openBackupClick, onMenuClick }) => {
               Intentos
             </TableCell>
             <TableCell sx={{ fontWeight: 'bold', backgroundColor: theme.palette.primary.light, color: theme.palette.primary.contrastText }}>
-              Última Act.
+              Última Modif.
             </TableCell>
             <TableCell sx={{ fontWeight: 'bold', backgroundColor: theme.palette.primary.light, color: theme.palette.primary.contrastText }}>
               Acciones
