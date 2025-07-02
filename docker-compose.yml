@@ -193,8 +193,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
-      - proxy
+      proxy:
+        condition: service_healthy
     networks:
       - netback-net
     logging:
