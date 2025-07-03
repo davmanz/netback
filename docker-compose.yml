@@ -56,14 +56,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -193,8 +186,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
-      - proxy
+      proxy:
+        condition: service_healthy
     networks:
       - netback-net
     logging:

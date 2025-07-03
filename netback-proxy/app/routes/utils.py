@@ -73,7 +73,29 @@ async def save_classified_hosts(request: Request):
             json=data,
             headers={"Authorization": f"Bearer {token.split()[-1]}"}
         )
-    return response.json()
+    
+    # Agregar manejo de errores para respuestas no-JSON
+    try:
+        if response.status_code in [200, 201]:
+            return response.json()
+        else:
+            # Si hay error HTTP, intentar parsear JSON de error o devolver texto plano
+            try:
+                error_data = response.json()
+                return {"error": error_data, "status_code": response.status_code}
+            except:
+                # Si no es JSON válido, devolver el texto de la respuesta
+                return {
+                    "error": f"Backend error: {response.text}", 
+                    "status_code": response.status_code
+                }
+    except Exception as e:
+        # Si falla completamente el parseo
+        return {
+            "error": f"Failed to parse response: {str(e)}", 
+            "raw_response": response.text,
+            "status_code": response.status_code
+        }
 
 @router.get("/classification-rules/", dependencies=[Depends(auth_required)])
 async def get_classification_rules(request: Request):
