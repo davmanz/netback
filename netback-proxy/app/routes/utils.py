@@ -76,7 +76,7 @@ async def save_classified_hosts(request: Request):
     
     # Agregar manejo de errores para respuestas no-JSON
     try:
-        if response.status_code == 200:
+        if response.status_code in [200, 201]:
             return response.json()
         else:
             # Si hay error HTTP, intentar parsear JSON de error o devolver texto plano

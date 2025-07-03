@@ -439,7 +439,7 @@ def executeCommand(request, pk):
 def ping_device(request):
     """Ejecuta un ping a un dispositivo desde el servidor"""
     ip = request.data.get("ip")
-    
+
     # Validación mejorada de IP
     if not ip or not is_valid_ip(ip):
         return Response(
@@ -457,10 +457,10 @@ def ping_device(request):
             text=True,
             timeout=5
         )
-        
+
         # Analizar la salida para información más detallada
         output = result.stdout.lower()
-        
+
         if result.returncode == 0:
             # Extraer estadísticas del ping
             stats = parse_ping_stats(output)
@@ -480,7 +480,7 @@ def ping_device(request):
                 error_msg = "❌ Host desconocido"
             elif "network is unreachable" in output:
                 error_msg = "❌ Red inalcanzable"
-            
+
             return Response({
                 "status": "error",
                 "data": {
@@ -489,7 +489,7 @@ def ping_device(request):
                     "message": error_msg
                 }
             })
-            
+
     except subprocess.TimeoutExpired:
         return Response(
             {
@@ -812,7 +812,7 @@ def bulk_save_classified_hosts(request):
                 manufacturer=manufacturer,
                 deviceType=device_type,
                 area=area,
-                VaultCredential=vault,
+                vaultCredential=vault,
             )
             created += 1
         except IntegrityError as e:

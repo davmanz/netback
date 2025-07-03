@@ -234,7 +234,6 @@ const BulkHostImport = () => {
     };
 
     try {
-      console.log("Saving payload:", payload);
       const result = await saveClassifiedHosts(payload);
       if (result?.created > 0) {
         setSnackbar({ 

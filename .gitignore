@@ -84,3 +84,4 @@ docker-compose.override.yml
 # Base de Datos
 # ==============================
 /data/
+/data
