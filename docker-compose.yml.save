@@ -1,0 +1,205 @@
+services:
+  # Servicio de Redis
+  redis:
+    image: redis:7-alpine
+    container_name: netback-redis
+    networks:
+      - netback-net
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+      timeout: 5s
+    restart: unless-stopped
+
+  # Servicio de PostgreSQL
+  postgres:
+    image: postgres:15.10
+    container_name: netback-db
+    env_file:
+      - netback-env/.env
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+    networks:
+      - netback-net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "netback"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+      timeout: 5s
+    restart: unless-stopped
+
+  # Backend (Django + Gunicorn)
+  backend:
+    build: ./netback-backend
+    container_name: netback-backend
+    volumes:
+      - app:/app
+    ports:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - netback-env/.env
+    networks:
+      - netback-net
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "showmigrations"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery Worker
+  celery:
+    build: ./netback-backend/celery_docker/ubuntu
+    container_name: netback-celery
+    command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "worker", "--loglevel=info"]
+    volumes:
+      - app:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./netback-env/.env
+    networks:
+      - netback-net
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 800M
+        reservations:
+          cpus: '0.3'
+          memory: 400M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery Beat
+  celery-beat:
+    build: ./netback-backend/celery_docker/ubuntu
+    container_name: netback-celery-beat
+    command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "beat", "--loglevel=info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
+    volumes:
+      - app:/app
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./netback-env/.env
+    networks:
+      - netback-net
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 300M
+        reservations:
+          cpus: '0.1'
+          memory: 150M
+
+  # Proxy
+  proxy:
+    build: ./netback-proxy
+    container_name: netback-proxy
+    env_file:
+      - ./netback-env/.env
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netback-net
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 500M
+        reservations:
+          cpus: '0.2'
+          memory: 200M
+
+  # Frontend
+  frontend:
+    build: ./netback-frontend
+    container_name: netback-frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 200M
+        reservations:
+          cpus: '0.1'
+          memory: 100M
+    ports:
+      - "80:80"
+    depends_on:
+      proxy:
+        condition: service_healthy
+    networks:
+      - netback-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
+  app:
+
+networks:
+  netback-net:
+    driver: bridge
