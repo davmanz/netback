@@ -38,8 +38,7 @@ services:
   backend:
     build: ./netback-backend
     container_name: netback-backend
-    volumes:
-      - app:/app
+    
     ports:
       - "8000"
     depends_on:
@@ -69,8 +68,7 @@ services:
     build: ./netback-backend/celery_docker/ubuntu
     container_name: netback-celery
     command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "worker", "--loglevel=info"]
-    volumes:
-      - app:/app
+  
     depends_on:
       backend:
         condition: service_healthy
@@ -106,8 +104,7 @@ services:
     build: ./netback-backend/celery_docker/ubuntu
     container_name: netback-celery-beat
     command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "beat", "--loglevel=info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
-    volumes:
-      - app:/app
+ 
     depends_on:
       backend:
         condition: service_healthy

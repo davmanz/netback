@@ -111,7 +111,7 @@ class BackupStatusTracker(models.Model):
     last_status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="unchanged")
     # ...
 ```
-
+(CORREGIDO)
 **`netback-backend/core/network_util/backup.py` (fragmento corregido):**
 ```python
 from core.models import Backup, BackupStatusTracker
@@ -141,7 +141,7 @@ def perform_backup_logic(device):
 ```
 
 ---
-
+(CORREGIDO)
 ### 4) *autoBackup* con Celery Beat no se está programando
 - **Síntoma:** En Docker se usa `DatabaseScheduler` de `django_celery_beat`, pero no existe la `PeriodicTask` correspondiente. El `beat_schedule` en código no
   aplica con ese scheduler.
