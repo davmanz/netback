@@ -137,30 +137,10 @@ class NetworkDeviceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Valida que solo se use una credencial al crear un equipo"""
-        if serializer.validated_data.get("vaultCredential") and (
-            serializer.validated_data.get("customUser")
-            or serializer.validated_data.get("customPass")
-        ):
-            return Response(
-                {
-                    "error": "No puedes usar credenciales propias y Vault al mismo tiempo."
-                },
-                status=400,
-            )
         serializer.save()
 
     def perform_update(self, serializer):
         """Valida que solo se use una credencial al actualizar un equipo"""
-        if serializer.validated_data.get("vaultCredential") and (
-            serializer.validated_data.get("customUser")
-            or serializer.validated_data.get("customPass")
-        ):
-            return Response(
-                {
-                    "error": "No puedes usar credenciales propias y Vault al mismo tiempo."
-                },
-                status=400,
-            )
         serializer.save()
 
 
