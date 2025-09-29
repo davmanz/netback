@@ -60,7 +60,7 @@ def backupDevice(device):
             tracker.success_count = 0
             tracker.error_count = 0
             tracker.no_change_count += 1
-            tracker.last_status = "success_no_changes"
+            tracker.last_status = "unchanged"
             tracker.save()
             return {"success": True, "message": "No Changes. Backup not created."}
 
@@ -75,7 +75,7 @@ def backupDevice(device):
         tracker.no_change_count = 0
         tracker.error_count = 0
         tracker.success_count += 1
-        tracker.last_status = "success_with_changes"
+        tracker.last_status = "success"
         tracker.save()
 
         return {"success": True, "backupId": backup.id, "parsed_vlan": parsed_vlan}

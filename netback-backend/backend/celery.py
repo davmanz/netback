@@ -8,10 +8,7 @@ celery_app = Celery("backend")
 celery_app.config_from_object("django.conf:settings", namespace="CELERY")
 celery_app.autodiscover_tasks()
 
+celery_app.conf.beat_scheduler = 'django_celery_beat.schedulers:DatabaseScheduler'
 
-celery_app.conf.beat_schedule = {
-    "check_backup_time": {
-        "task": "core.tasks.autoBackup",
-        "schedule": crontab(minute="*"),  # Se ejecuta cada minuto
-    },
-}
+
+

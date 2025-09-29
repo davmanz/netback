@@ -8,7 +8,7 @@ Este documento resume **hallazgos**, su **criticidad**, **archivos afectados** y
 ---
 
 ## 🔴 Prioridad ALTA
-
+(CORREGIDO)
 ### 1) Bug al crear/actualizar `NetworkDevice` (la validación no detiene el guardado)
 - **Síntoma:** En `perform_create`/`perform_update` se retorna `Response(...)`. DRF **ignora** ese retorno y el objeto puede guardarse aunque haya error.
 - **Impacto:** Riesgo de datos inválidos en BD.
@@ -55,7 +55,7 @@ class NetworkDeviceSerializer(serializers.ModelSerializer):
 > **Nota:** Si alguna validación solo puede hacerse en el viewset, **levantar** `serializers.ValidationError` en lugar de retornar `Response`.
 
 ---
-
+(CORREGIDO)
 ### 2) Atributo mal escrito rompe comandos remotos
 - **Síntoma:** Se usa `device.VaultCredential` (V mayúscula) en lugar de `device.vaultCredential`. Lanza `AttributeError`.
 - **Impacto:** Falla la ejecución de comandos (Netmiko).
@@ -88,7 +88,7 @@ def executeCommandOnDevice(device, command):
 ```
 
 ---
-
+(CORREGIDO)
 ### 3) `BackupStatusTracker.last_status` usa valores fuera de las *choices*
 - **Síntoma:** Se asigna `success_no_changes`/`success_with_changes`, pero las choices del modelo son `success | unchanged | error`.
 - **Impacto:** Inconsistencia y posibles datos inválidos.
