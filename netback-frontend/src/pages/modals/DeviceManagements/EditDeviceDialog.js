@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button,
-  Snackbar, Alert, Select, MenuItem, FormControl, InputLabel, CircularProgress, Typography
+  Snackbar, Alert, Select, MenuItem, FormControl, InputLabel, CircularProgress, Typography,Grid
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import {
@@ -419,16 +419,16 @@ const EditDeviceDialog = ({ open, onClose, deviceId, onDeviceUpdated }) => {
                 const newEnabledFields = { ...enabledFields };
                 delete newEnabledFields.credentialType;
                 delete newEnabledFields.vaultCredential;
-                delete newEnabledFields.username;
-                delete newEnabledFields.password;
+                delete newEnabledFields.customUser;
+                delete newEnabledFields.customPass;
                 setEnabledFields(newEnabledFields);
               } else {
                 setEnabledFields(prev => ({
                   ...prev,
                   credentialType: true,
                   vaultCredential: true,
-                  username: true,
-                  password: true
+                  customUser: true,
+                  customPass: true
                 }));
               }
             }}
@@ -470,25 +470,29 @@ const EditDeviceDialog = ({ open, onClose, deviceId, onDeviceUpdated }) => {
           )}
 
           {deviceData.credentialType === "personalizado" && (
-            <>
-              <TextField
-                name="username"
-                label="Usuario"
-                value={deviceData.username || ""}
-                onChange={handleChange}
-                disabled={!credentialsEditing}
-                sx={{ minWidth: '200px' }}
-              />
-              <TextField
-                name="password"
-                label="Contraseña"
-                type="password"
-                value={deviceData.password || ""}
-                onChange={handleChange}
-                disabled={!credentialsEditing}
-                sx={{ minWidth: '200px' }}
-              />
-            </>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={6}>
+                <TextField
+                  name="customUser"
+                  label="Usuario"
+                  value={deviceData.customUser || ""}
+                  onChange={handleChange}
+                  disabled={!credentialsEditing}
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  name="customPass"
+                  label="Contraseña"
+                  type="password"
+                  value={deviceData.customPass || ""}
+                  onChange={handleChange}
+                  disabled={!credentialsEditing}
+                  fullWidth
+                />
+              </Grid>
+            </Grid>
           )}
         </div>
       </div>

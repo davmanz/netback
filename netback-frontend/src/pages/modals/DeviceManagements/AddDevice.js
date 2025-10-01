@@ -39,17 +39,17 @@ const AddDevice = () => {
   const [credentialType, setCredentialType] = useState("");
 
   const [formData, setFormData] = useState({
-    hostname: "",
-    ipAddress: "",
-    deviceType: "",
-    manufacturer: "",
-    model: "",
-    country: "",
-    site: "",
-    area: "",
-    username: "",
-    password: "",
-    vaultCredential: "",
+  hostname: "",
+  ipAddress: "",
+  deviceType: "",
+  manufacturer: "",
+  model: "",
+  country: "",
+  site: "",
+  area: "",
+  customUser: "",
+  customPass: "",
+  vaultCredential: "",
   });
 
   useEffect(() => {
@@ -97,8 +97,8 @@ const AddDevice = () => {
       setCredentialType(value);
       setFormData({
         ...formData,
-        username: value === "personalizado" ? "" : formData.username,
-        password: value === "personalizado" ? "" : formData.password,
+        customUser: value === "personalizado" ? "" : formData.customUser,
+        customPass: value === "personalizado" ? "" : formData.customPass,
       });
     } else {
       setFormData({ ...formData, [name]: value });
@@ -133,7 +133,7 @@ const AddDevice = () => {
       return;
     }
 
-    if (credentialType === "personalizado" && (!formData.username || !formData.password)) {
+    if (credentialType === "personalizado" && (!formData.customUser || !formData.customPass)) {
       setErrorMessage("Debes ingresar un usuario y contraseña.");
       setIsSaving(false);
       return;
@@ -282,10 +282,10 @@ const AddDevice = () => {
             {credentialType === "personalizado" && (
               <>
                 <Grid item xs={6}>
-                  <TextField fullWidth label="Usuario" name="username" value={formData.username} onChange={handleChange} required />
+                  <TextField fullWidth label="Usuario" name="customUser" value={formData.customUser} onChange={handleChange} required />
                 </Grid>
                 <Grid item xs={6}>
-                  <TextField fullWidth type="password" label="Contraseña" name="password" value={formData.password} onChange={handleChange} required />
+                  <TextField fullWidth type="password" label="Contraseña" name="customPass" value={formData.customPass} onChange={handleChange} required />
                 </Grid>
               </>
             )}

@@ -107,10 +107,10 @@ class NetworkDeviceSerializer(serializers.ModelSerializer):
             "createdAt", "updatedAt", "backup_tracker",
         ]
 
-    def validate(self, data):
-        if data.get("vaultCredential") and (data.get("customUser") or data.get("customPass")):
+    def validate(self, attrs):
+        if attrs.get("vaultCredential") and (attrs.get("customUser") or attrs.get("customPass")):
             raise serializers.ValidationError("No puedes usar credenciales propias y Vault al mismo tiempo.")
-        return data
+        return attrs
 
 
 # **********************************************************
