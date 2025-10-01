@@ -3,6 +3,48 @@ import uuid
 from django.contrib.auth.models import (AbstractBaseUser, BaseUserManager,PermissionsMixin)
 from django.db import models
 from utils.env import get_encryption_cipher
+from cryptography.fernet import Fernet
+from decouple import config
+
+# Clave para el cifrado Fernet, gestionada por variable de entorno
+try:
+    FERNET_KEY = config("ENCRYPTION_KEY_VAULT").encode()
+    cipher_suite = Fernet(FERNET_KEY)
+except Exception as e:
+    # Manejar el caso donde la clave no está configurada para evitar que la app crashee al iniciar
+    print(f"ADVERTENCIA: No se pudo inicializar Fernet. Asegúrate de que ENCRYPTION_KEY_VAULT esté configurada. Error: {e}")
+    cipher_suite = None
+
+class EncryptedCharField(models.CharField):
+    """
+    Un CharField personalizado que cifra y descifra valores automáticamente
+    usando Fernet.
+    """
+    def get_prep_value(self, value):
+        """Cifra el valor antes de guardarlo en la base de datos."""
+        if value is not None and cipher_suite:
+            # Asegurarse de que no se cifre un valor ya cifrado
+            try:
+                cipher_suite.decrypt(value.encode())
+                return value # Ya está cifrado
+            except Exception:
+                return cipher_suite.encrypt(value.encode()).decode()
+        return value
+
+    def from_db_value(self, value, expression, connection):
+        """Descifra el valor al leerlo de la base de datos."""
+        if value is not None and cipher_suite:
+            try:
+                return cipher_suite.decrypt(value.encode()).decode()
+            except Exception:
+                # Si falla la desencriptación (ej. clave cambiada o valor no cifrado),
+                # devolver el valor original para no romper la aplicación.
+                return value
+        return value
+
+# **********************************************************
+# 📍 Modelo de País
+# **********************************************************
 
 # **********************************************************
 # 📍 Modelo de País
@@ -116,6 +158,13 @@ class VaultCredential(models.Model):
 # **********************************************************
 # 🔌 Gestión de Dispositivos
 # **********************************************************
+from django.core.exceptions import ValidationError
+
+SUPPORTED_NETMIKO_TYPES = [
+    "cisco_ios", "cisco_xe", "cisco_xr", "cisco_nxos", "cisco_asa",
+    "huawei", "hp_procurve", "juniper", "arista_eos", "mikrotik_routeros",
+]
+
 class Manufacturer(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
@@ -123,11 +172,21 @@ class Manufacturer(models.Model):
     get_vlan_info = models.CharField(max_length=100)
     netmiko_type = models.CharField(
         max_length=50,
-        unique=True,
         null=True,
         blank=True,
+        choices=[(t, t) for t in SUPPORTED_NETMIKO_TYPES],
         help_text="Tipo de dispositivo compatible con Netmiko",
     )
+
+    def clean(self):
+        if self.netmiko_type and self.netmiko_type not in SUPPORTED_NETMIKO_TYPES:
+            raise ValidationError({"netmiko_type": f"Tipo Netmiko '{self.netmiko_type}' no soportado."})
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
 
     def __str__(self):
         return self.name
@@ -150,7 +209,7 @@ class NetworkDevice(models.Model):
     deviceType = models.ForeignKey(DeviceType, on_delete=models.CASCADE)
     vaultCredential = models.ForeignKey(VaultCredential, on_delete=models.SET_NULL, null=True, blank=True)
     customUser = models.CharField(max_length=100, null=True, blank=True)
-    customPass = models.TextField(null=True, blank=True)
+    customPass = EncryptedCharField(max_length=512, null=True, blank=True)
     status = models.BooleanField(default=True)
     createdAt = models.DateTimeField(auto_now_add=True)
     updatedAt = models.DateTimeField(auto_now=True)

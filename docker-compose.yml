@@ -38,7 +38,6 @@ services:
   backend:
     build: ./netback-backend
     container_name: netback-backend
-    
     ports:
       - "8000"
     depends_on:
@@ -51,10 +50,11 @@ services:
     networks:
       - netback-net
     healthcheck:
-      test: ["CMD", "python", "manage.py", "showmigrations"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
     restart: unless-stopped
     logging:
@@ -65,10 +65,11 @@ services:
 
   # Celery Worker
   celery:
-    build: ./netback-backend/celery_docker/ubuntu
+    build:
+      context: ./netback-backend
+      dockerfile: ./celery_docker/ubuntu/Dockerfile
     container_name: netback-celery
     command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "worker", "--loglevel=info"]
-  
     depends_on:
       backend:
         condition: service_healthy
@@ -101,10 +102,11 @@ services:
 
   # Celery Beat
   celery-beat:
-    build: ./netback-backend/celery_docker/ubuntu
+    build:
+      context: ./netback-backend
+      dockerfile: ./celery_docker/ubuntu/Dockerfile
     container_name: netback-celery-beat
     command: ["dockerize", "-wait", "tcp://netback-backend:8000", "-timeout", "60s", "celery", "-A", "backend", "beat", "--loglevel=info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
- 
     depends_on:
       backend:
         condition: service_healthy

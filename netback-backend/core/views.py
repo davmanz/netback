@@ -43,17 +43,9 @@ class UserSystemViewSet(viewsets.ModelViewSet):
     serializer_class = UserSystemSerializer
 
     def get_permissions(self):
-        if self.action in ["list", "retrieve"]:
+        if self.action in ["list", "retrieve", "update", "partial_update"]:
             return [IsAuthenticated()]
-        elif self.action in ["create"]:
-            return [IsAdmin()]
-        elif self.action in ["update", "partial_update"]:
-            return (
-                [IsAdmin()]
-                if self.request.user.role == "admin" # type: ignore
-                else [IsAuthenticated()]
-            )
-        elif self.action in ["destroy"]:
+        elif self.action in ["create", "destroy"]:
             return [IsAdmin()]
         return super().get_permissions()
 
@@ -62,6 +54,24 @@ class UserSystemViewSet(viewsets.ModelViewSet):
         """Devuelve la información del usuario autenticado"""
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        user_to_modify = self.get_object()
+        if not request.user.role == "admin" and request.user != user_to_modify:
+            return Response(
+                {"detail": "No tienes permiso para editar este usuario."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        user_to_modify = self.get_object()
+        if not request.user.role == "admin" and request.user != user_to_modify:
+            return Response(
+                {"detail": "No tienes permiso para editar este usuario."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().partial_update(request, *args, **kwargs)
 
 
 class VaultCredentialViewSet(viewsets.ModelViewSet):

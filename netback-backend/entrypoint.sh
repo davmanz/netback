@@ -94,5 +94,5 @@ else
   exit 1
 fi
 
-log_info "🚀 Iniciando servidor Django con Uvicorn..."
-exec uvicorn backend.asgi:application --host 0.0.0.0 --port 8000 --log-level info
+log_info "🚀 Iniciando servidor Django..."
+exec "$@"

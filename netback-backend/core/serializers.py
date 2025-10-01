@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from .models import (Area, Backup, BackupDiff, BackupStatusTracker,
                      ClassificationRuleSet, Country, DeviceType, Manufacturer,
-                     NetworkDevice, Site, UserSystem, VaultCredential)
+                     NetworkDevice, Site, UserSystem, VaultCredential, SUPPORTED_NETMIKO_TYPES)
 
 
 # **********************************************************
@@ -119,7 +119,14 @@ class NetworkDeviceSerializer(serializers.ModelSerializer):
 class ManufacturerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Manufacturer
-        fields = ["id", "name", "get_running_config", "get_vlan_info"]
+        fields = ["id", "name", "get_running_config", "get_vlan_info", "netmiko_type"]
+
+    def validate_netmiko_type(self, value):
+        if value and value not in SUPPORTED_NETMIKO_TYPES:
+            raise serializers.ValidationError(
+                f"Tipo Netmiko '{value}' no soportado. Válidos: {', '.join(SUPPORTED_NETMIKO_TYPES)}"
+            )
+        return value
 
 
 # **********************************************************
@@ -150,12 +157,6 @@ class SiteSerializer(serializers.ModelSerializer):
         model = Site
         fields = ["id", "name", "country", "country_name"]
 
-    def validate(self, data):
-        """Validar que el país exista antes de asociarlo a un sitio."""
-        if not Country.objects.filter(id=data.get("country").id).exists():
-            raise serializers.ValidationError("El país seleccionado no existe.")
-        return data
-
 
 # **********************************************************
 # 📍 Serializador de Áreas
@@ -167,12 +168,6 @@ class AreaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Area
         fields = ["id", "name", "site", "site_name", "country_name"]
-
-    def validate(self, data):
-        """Validar que el sitio exista antes de asociarlo a un área."""
-        if not Site.objects.filter(id=data.get("site").id).exists():
-            raise serializers.ValidationError("El sitio seleccionado no existe.")
-        return data
 
 
 # **********************************************************

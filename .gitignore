@@ -11,6 +11,8 @@ Thumbs.db
 *.pyo
 __pycache__/
 *.swp
+/config.json
+/mcp-run.sh
 
 # ==============================
 # Node.js / React (frontend o backend)

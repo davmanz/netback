@@ -15,7 +15,10 @@ ENCRYPTION_KEY_VAULT = config("ENCRYPTION_KEY_VAULT")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS",
+    default="localhost,127.0.0.1,backend,proxy",
+).split(",")
 
 
 # Application definition
@@ -111,7 +114,7 @@ LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = config(
     "TIME_ZONE", 
-    default="America/Chile",)
+    default="America/Santiago",)
 
 USE_I18N = True
 
@@ -164,6 +167,8 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "http://localhost",
+    "http://127.0.0.1",
 ]
 CORS_URLS_REGEX = r'^/api/.*$' 

@@ -17,8 +17,7 @@ class ZabbixManager:
             return True
         except Exception as e:
             print(f"❌ Failed to connect to Zabbix API: {e}")
-            exit()
-            return False
+            raise
 
     def get_host_groups(self, group_names=None):
 

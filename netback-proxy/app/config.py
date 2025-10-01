@@ -9,7 +9,7 @@ class Settings:
     DJANGO_API_PORT: int = int(os.getenv('DJANGO_API_PORT'))
     HOST: str = os.getenv('FASTAPI_PROXY_URL')
     PORT: int = int(os.getenv('FASTAPI_PROXY_PORT'))
-    DEBUG: bool = os.getenv('FASTAPI_PROXY_URL', 'false').lower() == 'true'
+    DEBUG: bool = os.getenv('FASTAPI_PROXY_DEBUG', 'false').lower() == 'true'
     ALLOW_ORIGINS: list[str] = os.getenv('ALLOW_ORIGINS', '*').split(',')
     ALLOW_CREDENTIALS: bool = os.getenv('ALLOW_CREDENTIALS', 'true').lower() == 'true'
     ALLOW_METHODS: list[str] = os.getenv('ALLOW_METHODS', 'GET,POST,PUT,PATCH,DELETE,OPTIONS').split(',')
