@@ -17,9 +17,14 @@ DEBUG = False
 
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,backend,proxy",
+    default="localhost,127.0.0.1"
 ).split(",")
 
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default="http://localhost:3000,http://localhost,http://127.0.0.1",
+).split(",")
+CORS_URLS_REGEX = r'^/api/.*$' 
 
 # Application definition
 
@@ -166,9 +171,3 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost",
-    "http://127.0.0.1",
-]
-CORS_URLS_REGEX = r'^/api/.*$' 
