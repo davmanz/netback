@@ -1,24 +1,18 @@
-# Imagen base liviana con Python
-FROM python:3.13.3-slim
+# --- Etapa 1: Builder ---
+# Usamos una imagen completa para instalar dependencias, descargar herramientas y compilar paquetes.
+FROM python:3.13.3-slim as builder
 
+# Versión de Dockerize
 ENV DOCKERIZE_VERSION=v0.9.3
 
-# Establece el directorio de trabajo
-WORKDIR /app
-
-# Crear usuario no root
-RUN groupadd -r netback && useradd -r -g netback netback
-
-# Evita mensajes interactivos (como de psycopg2)
-# Establecer variables de entorno
+# Establecer variables de entorno para un build limpio
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONFAULTHANDLER=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Instala dependencias del sistema
-RUN apt-get update && apt-get install -y \
+# Instalar dependencias de compilación y descargar dockerize
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     wget \
@@ -26,13 +20,43 @@ RUN apt-get update && apt-get install -y \
     && apt-get autoremove -yqq --purge wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia e instala las dependencias de Python
-COPY requirements.txt ./
+# Crear un entorno virtual para mantener las dependencias aisladas
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copiar e instalar requerimientos en el entorno virtual
+WORKDIR /app
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-USER netback
-# Copia todo el código del proyecto
+# --- Etapa 2: Final ---
+# Empezamos de nuevo con una imagen slim limpia para la ejecución
+FROM python:3.13.3-slim
+
+# Establecer variables de entorno de ejecución
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Crear usuario no root para mayor seguridad
+RUN groupadd -r netback && useradd -r -g netback netback
+
+# Instalar solo las dependencias de *ejecución*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar dockerize y el entorno virtual desde la etapa builder
+COPY --from=builder /usr/local/bin/dockerize /usr/local/bin/dockerize
+COPY --from=builder /opt/venv /opt/venv
+
+# Copiar el código de la aplicación
+WORKDIR /app
 COPY . .
 
-# Exponer puertos si es necesario
+# Cambiar propiedad de los archivos y activar venv
+RUN chown -R netback:netback /app
+ENV PATH="/opt/venv/bin:$PATH"
+USER netback
+
+# El CMD y ENTRYPOINT se definen en docker-compose.yml
 EXPOSE 8000
