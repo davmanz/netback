@@ -1,59 +1,64 @@
-FROM python:3.13.3-slim
+# --- Etapa 1: Builder ---
+# Usamos una imagen completa para instalar dependencias y compilar paquetes.
+FROM python:3.13.3-slim as builder
 
-# Establecer variables de entorno
+# Establecer variables de entorno para un build limpio
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONFAULTHANDLER=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on
 
-
-# Crear usuario no root
-RUN groupadd -r netback && useradd -r -g netback netback
-
-# Instalar dependencias del sistema y limpiar en una sola capa
-RUN apt update && apt install -y --no-install-recommends \
+# Instalar solo las dependencias de compilación necesarias
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
-    libffi-dev \
-    libssl-dev \
-    netcat-openbsd \
-    openssh-client \
-    curl \
-    gcc libpq-dev \
-    iputils-ping \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Crear un entorno virtual para mantener las dependencias aisladas
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copiar e instalar requerimientos en el entorno virtual
 WORKDIR /app
-
-# Copiar requirements.txt primero para aprovechar la caché de Docker
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+
+# --- Etapa 2: Final ---
+# Empezamos de nuevo con una imagen slim limpia para la ejecución
+FROM python:3.13.3-slim
+
+# Establecer variables de entorno de ejecución
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Crear usuario no root para mayor seguridad
+RUN groupadd -r netback && useradd -r -g netback netback
+
+# Instalar solo las dependencias de *ejecución* (mucho más pequeñas)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    netcat-openbsd \
+    iputils-ping \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar el entorno virtual con los paquetes ya instalados desde la etapa builder
+COPY --from=builder /opt/venv /opt/venv
 
 # Copiar el código de la aplicación
+WORKDIR /app
 COPY . .
 
-# Cambiar propiedad de los archivos al usuario django
+# Cambiar propiedad de los archivos al usuario no root
 RUN chown -R netback:netback /app
 
-# Crear directorio para archivos estáticos y media
-RUN mkdir -p /app/data/keys && chown -R netback:netback /app/data
-
-# Cambiar al usuario no root
+# Activar el entorno virtual y cambiar al usuario no root
+ENV PATH="/opt/venv/bin:$PATH"
 USER netback
 
-# Agregar healthcheck
-#HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    #CMD curl -f http://localhost:8000/health/ || exit 1
-
-# Exponer puerto
+# Exponer puerto y definir el punto de entrada
 EXPOSE 8000
-
-# Usar script de entrada para generar SECRET_KEY si no se proporciona
 COPY entrypoint.sh /app/
-
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000"]
