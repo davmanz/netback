@@ -2,18 +2,7 @@
 import uuid
 from django.contrib.auth.models import (AbstractBaseUser, BaseUserManager,PermissionsMixin)
 from django.db import models
-from utils.env import get_encryption_cipher
-from cryptography.fernet import Fernet
-from decouple import config
-
-# Clave para el cifrado Fernet, gestionada por variable de entorno
-try:
-    FERNET_KEY = config("ENCRYPTION_KEY_VAULT").encode()
-    cipher_suite = Fernet(FERNET_KEY)
-except Exception as e:
-    # Manejar el caso donde la clave no está configurada para evitar que la app crashee al iniciar
-    print(f"ADVERTENCIA: No se pudo inicializar Fernet. Asegúrate de que ENCRYPTION_KEY_VAULT esté configurada. Error: {e}")
-    cipher_suite = None
+from utils.env import get_encryption_cipher, get_fernet
 
 class EncryptedCharField(models.CharField):
     """
@@ -22,24 +11,32 @@ class EncryptedCharField(models.CharField):
     """
     def get_prep_value(self, value):
         """Cifra el valor antes de guardarlo en la base de datos."""
-        if value is not None and cipher_suite:
-            # Asegurarse de que no se cifre un valor ya cifrado
-            try:
-                cipher_suite.decrypt(value.encode())
-                return value # Ya está cifrado
-            except Exception:
-                return cipher_suite.encrypt(value.encode()).decode()
-        return value
+        if value is None:
+            return value
+        cipher = get_fernet()
+        if not cipher:
+            return value
+
+        # Detectar si ya está cifrado por Fernet (prefijo típico 'gAAAAA') y no volver a cifrar
+        if isinstance(value, str) and value.startswith("gAAAAA"):
+            return value
+
+        return cipher.encrypt(value.encode()).decode()
 
     def from_db_value(self, value, expression, connection):
         """Descifra el valor al leerlo de la base de datos."""
-        if value is not None and cipher_suite:
-            try:
-                return cipher_suite.decrypt(value.encode()).decode()
-            except Exception:
-                # Si falla la desencriptación (ej. clave cambiada o valor no cifrado),
-                # devolver el valor original para no romper la aplicación.
-                return value
+        if value is None:
+            return value
+        cipher = get_fernet()
+        if not cipher:
+            return value
+
+        try:
+            if isinstance(value, str) and value.startswith("gAAAAA"):
+                return cipher.decrypt(value.encode()).decode()
+        except Exception:
+            return value
+
         return value
 
 # **********************************************************
@@ -135,12 +132,18 @@ class VaultCredential(models.Model):
 
     @staticmethod
     def _get_cipher():
+        # Mantener compatibilidad con la función preexistente pero usar el helper tolerante
+        cipher = get_fernet()
+        if cipher:
+            return cipher
         return get_encryption_cipher()
 
     def save(self, *args, **kwargs):
         """Cifra la contraseña antes de guardarla en la base de datos"""
         if self.password and not self.password.startswith("gAAAAA"):
             cipher = self._get_cipher()
+            if not cipher:
+                raise RuntimeError("ENCRYPTION_KEY_VAULT no configurada: no se puede cifrar la contraseña")
             self.password = cipher.encrypt(self.password.encode()).decode()
         super().save(*args, **kwargs)
 
@@ -148,6 +151,8 @@ class VaultCredential(models.Model):
         """Descifra la contraseña cuando se necesite"""
         if self.password:
             cipher = self._get_cipher()
+            if not cipher:
+                raise RuntimeError("ENCRYPTION_KEY_VAULT no configurada: no se puede descifrar la contraseña")
             return cipher.decrypt(self.password.encode()).decode()
         return None
 
@@ -222,6 +227,8 @@ class NetworkDevice(models.Model):
         }
 
     def save(self, *args, **kwargs):
+
+        # No permitir usar Vault y credenciales propias a la vez
         if self.vaultCredential and (self.customUser or self.customPass):
             raise ValueError("No puedes usar credenciales propias y Vault al mismo tiempo.")
 
@@ -230,7 +237,15 @@ class NetworkDevice(models.Model):
             self.customUser = None
             self.customPass = None
 
-        # Si se usan credenciales personalizadas, eliminar el VaultCredential
+        else:
+            # Si NO hay Vault asociado, asegurar que existan credenciales.
+            # Asignar valores por defecto 'admin'/'admin' si faltan para evitar errores en backups.
+            if not self.customUser:
+                self.customUser = "admin"
+            if not self.customPass:
+                self.customPass = "admin"
+
+        # Si se usan credenciales personalizadas, eliminar el VaultCredential (ya cubierto arriba)
         if self.customUser or self.customPass:
             self.vaultCredential = None
 
@@ -250,7 +265,11 @@ class Backup(models.Model):
     backupTime = models.DateTimeField(auto_now_add=True)
     runningConfig = models.TextField()
     vlanBrief = models.TextField()
-    checksum = models.CharField(max_length=64, unique=True)
+    checksum = models.CharField(max_length=64)
+
+    class Meta:
+        # El checksum debe ser único por dispositivo, no globalmente
+        unique_together = ("device", "checksum")
 
     def __str__(self):
         return f"Backup {self.device.hostname} - {self.backupTime}"
@@ -290,7 +309,7 @@ class BackupStatus(models.Model):
 
 # **********************************************************
 # 📂 Autoamtizacion de Respaldos
-# **********************************************************from django.db import models
+# **********************************************************
 class BackupSchedule(models.Model):
     """Modelo para definir la hora del respaldo automático"""
 

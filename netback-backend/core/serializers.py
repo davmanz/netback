@@ -42,6 +42,7 @@ class VaultCredentialSerializer(serializers.ModelSerializer):
     class Meta:
         model = VaultCredential
         fields = "__all__"
+        extra_kwargs = {"password": {"write_only": True}}
 
 
 # **********************************************************
@@ -107,9 +108,21 @@ class NetworkDeviceSerializer(serializers.ModelSerializer):
             "createdAt", "updatedAt", "backup_tracker",
         ]
 
+        extra_kwargs = {"customPass": {"write_only": True}}
+
     def validate(self, attrs):
-        if attrs.get("vaultCredential") and (attrs.get("customUser") or attrs.get("customPass")):
+        # Support partial updates: combine incoming attrs with existing instance values
+        vault = attrs.get("vaultCredential") if "vaultCredential" in attrs else getattr(self.instance, "vaultCredential", None)
+        custom_user = attrs.get("customUser") if "customUser" in attrs else getattr(self.instance, "customUser", None)
+        custom_pass = attrs.get("customPass") if "customPass" in attrs else getattr(self.instance, "customPass", None)
+
+        if vault and (custom_user or custom_pass):
             raise serializers.ValidationError("No puedes usar credenciales propias y Vault al mismo tiempo.")
+
+        # Requerir al menos un método de autenticación: vault OR (custom_user AND custom_pass)
+        if not vault and not (custom_user and custom_pass):
+            raise serializers.ValidationError("Debe especificarse un VaultCredential o ambos customUser y customPass.")
+
         return attrs
 
 

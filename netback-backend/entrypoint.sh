@@ -89,6 +89,12 @@ elif [ "$db_check_result" = "NO_DATA" ]; then
   # Inicializar datos
   log_info "🔧 Inicializando datos del sistema..."
   python manage.py init_data
+
+  # Crear o actualizar el PeriodicTask para autoBackup (por defecto medianoche)
+  # Usar la variable TIME_ZONE si está definida en el entorno
+  TZ_ENV=${TIME_ZONE:-UTC}
+  log_info "🕛 Configurando tarea periódica autoBackup a 00:00 (${TZ_ENV})"
+  python manage.py create_autobackup_periodic --hour 0 --minute 0 --timezone "${TZ_ENV}"
 else
   log_error "❌ Error al verificar el estado de la base de datos: $db_check_result"
   exit 1

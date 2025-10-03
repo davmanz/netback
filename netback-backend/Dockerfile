@@ -1,6 +1,6 @@
 # --- Etapa 1: Builder ---
 # Usamos una imagen completa para instalar dependencias y compilar paquetes.
-FROM python:3.13.3-slim as builder
+FROM python:3.12.11-slim AS builder
 
 # Establecer variables de entorno para un build limpio
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,12 +21,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copiar e instalar requerimientos en el entorno virtual
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 
 # --- Etapa 2: Final ---
 # Empezamos de nuevo con una imagen slim limpia para la ejecución
-FROM python:3.13.3-slim
+FROM python:3.12.11-slim
 
 # Establecer variables de entorno de ejecución
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -52,6 +53,9 @@ COPY . .
 
 # Cambiar propiedad de los archivos al usuario no root
 RUN chown -R netback:netback /app
+# Copiar entrypoint y asegurar permisos mientras somos root
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh && chown netback:netback /app/entrypoint.sh
 
 # Activar el entorno virtual y cambiar al usuario no root
 ENV PATH="/opt/venv/bin:$PATH"
@@ -59,6 +63,5 @@ USER netback
 
 # Exponer puerto y definir el punto de entrada
 EXPOSE 8000
-COPY entrypoint.sh /app/
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:8000"]

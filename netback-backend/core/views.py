@@ -236,7 +236,7 @@ def getBackupStatus(request, pk):
     """Obtener el estado de los respaldos del dispositivo"""
     try:
         device = NetworkDevice.objects.get(pk=pk)
-        statuses = BackupStatus.objects.filter(device=device).order_by("-backupTime")
+        statuses = BackupStatus.objects.filter(device=device).order_by("-timestamp")
         data = [
             {"status": s.status, "message": s.message, "backupTime": s.timestamp}
             for s in statuses
@@ -322,7 +322,14 @@ def compareBackupsView(request, pk):
         device = NetworkDevice.objects.get(pk=pk)
         result = compareBackups(device)
 
-        print(f'success {result["success"]} backupDiffId {result["backupDiffId"]} changes {result["changes"]}')
+        # Evitar KeyError si result no contiene las claves esperadas
+        try:
+            succ = result.get("success")
+            bdid = result.get("backupDiffId")
+            changes = result.get("changes")
+            print(f'success {succ} backupDiffId {bdid} changes {changes}')
+        except Exception:
+            print("compareBackups returned unexpected structure: %r" % (result,))
 
         if "error" in result:
             return Response(result, status=400)
@@ -733,7 +740,7 @@ def from_csv_bulk_view(request):
 # Salvar Host clasificados
 # **********************************************************
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsOperator])
 def bulk_save_classified_hosts(request):
     """
     Guarda múltiples hosts clasificados como NetworkDevice en la base de datos.
@@ -742,71 +749,39 @@ def bulk_save_classified_hosts(request):
     created = 0
     errors = []
 
-    for host in hosts_data:
-        hostname = host.get("hostname")
-        ip = host.get("ipAddress")
-        model = host.get("model")
-        manufacturer_id = host.get("manufacturer")
-        device_type_id = host.get("deviceType")
-        area_id = host.get("area")
-        vault_id = host.get("vaultCredential")
-
-        # Validación básica
-        if (
-            not hostname
-            or not ip
-            or not model
-            or not manufacturer_id
-            or not device_type_id
-            or not area_id
-        ):
-            errors.append({"hostname": hostname, "error": "Faltan campos requeridos."})
-            continue
-
-        # Validar relaciones
-        manufacturer = Manufacturer.objects.filter(id=manufacturer_id).first()
-        device_type = DeviceType.objects.filter(id=device_type_id).first()
-        area = Area.objects.filter(id=area_id).first()
+    for idx, host in enumerate(hosts_data):
+        # Prepare related objects lookup
+        manufacturer = Manufacturer.objects.filter(id=host.get("manufacturer")).first()
+        device_type = DeviceType.objects.filter(id=host.get("deviceType")).first()
+        area = Area.objects.filter(id=host.get("area")).first()
         vault = (
-            VaultCredential.objects.filter(id=vault_id).first() if vault_id else None
+            VaultCredential.objects.filter(id=host.get("vaultCredential")).first()
+            if host.get("vaultCredential")
+            else None
         )
 
-        if not manufacturer or not device_type or not area:
-            errors.append(
-                {
-                    "hostname": hostname,
-                    "error": "UUID inválido en manufacturer, deviceType o area.",
-                }
-            )
+        data = {
+            "hostname": host.get("hostname"),
+            "ipAddress": host.get("ipAddress"),
+            "model": host.get("model"),
+            "manufacturer": manufacturer.id if manufacturer else host.get("manufacturer"),
+            "deviceType": device_type.id if device_type else host.get("deviceType"),
+            "area": area.id if area else host.get("area"),
+            "vaultCredential": vault.id if vault else host.get("vaultCredential"),
+            "customUser": host.get("customUser"),
+            "customPass": host.get("customPass"),
+        }
+
+        serializer = NetworkDeviceSerializer(data=data)
+        if not serializer.is_valid():
+            errors.append({"index": idx, "hostname": host.get("hostname"), "errors": serializer.errors})
             continue
 
-        # Verificar duplicado
-        if (
-            NetworkDevice.objects.filter(hostname=hostname).exists()
-            or NetworkDevice.objects.filter(ipAddress=ip).exists()
-        ):
-            errors.append(
-                {
-                    "hostname": hostname,
-                    "error": "Ya existe un dispositivo con ese hostname o IP.",
-                }
-            )
-            continue
-
-        # Crear dispositivo
         try:
-            NetworkDevice.objects.create(
-                hostname=hostname,
-                ipAddress=ip,
-                model=model,
-                manufacturer=manufacturer,
-                deviceType=device_type,
-                area=area,
-                vaultCredential=vault,
-            )
+            serializer.save()
             created += 1
         except IntegrityError as e:
-            errors.append({"hostname": hostname, "error": str(e)})
+            errors.append({"index": idx, "hostname": host.get("hostname"), "error": str(e)})
 
     return Response(
         {"created": created, "errors": errors},

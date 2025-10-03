@@ -13,28 +13,20 @@ logger = logging.getLogger(__name__)
 @shared_task
 def autoBackup():
     """Ejecuta el respaldo automático según la hora configurada en BackupSchedule"""
+    # Esta tarea debe ser programada desde django-celery-beat (PeriodicTask / CrontabSchedule)
+    # y ejecutarse exactamente en la hora/minuto deseados. Antes la lógica verificaba
+    # la hora en la BD; al delegar la programación a django-celery-beat eliminamos esa
+    # comprobación frágil y permitimos que Beat dispare esta tarea en el momento correcto.
 
-    logger.info("🔄 Celery ejecutó autoBackup()")
+    logger.info("🔄 Celery ejecutó autoBackup() (invocado por celery-beat)")
 
-    schedule = BackupSchedule.objects.first()
-    if not schedule:
-        logger.warning("❌ No hay hora programada en la BD")
-        return {"error": "No se ha configurado una hora para el respaldo automático"}
-
-    # Obtener la hora programada con la zona horaria correcta
-    current_time = localtime(now()).time()
-    scheduled_time = schedule.scheduled_time
-
-    if (
-        current_time.hour == scheduled_time.hour
-        and current_time.minute == scheduled_time.minute
-    ):
-        logger.info("✅ Ejecutando respaldos")
+    try:
         resultado = execute_backup_process()
         logger.info(f"📂 Resultado de los backups: {resultado}")
-        return {"message": "Backups ejecutados."}
-
-    return {"message": "No es la hora programada aún."}
+        return {"message": "Backups ejecutados.", "result": resultado}
+    except Exception as e:
+        logger.exception("❌ Error ejecutando backups automáticos")
+        return {"error": str(e)}
 
 
 def execute_backup_process():
