@@ -1,6 +1,6 @@
 import httpx
 import logging
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends, HTTPException, Response
 from app.config import settings
 from app.dependencies import admin_required
 
@@ -16,12 +16,15 @@ async def get_current_user(request: Request):
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"{settings.full_django_api_url}/users/me/",
-            headers={"Authorization": f"Bearer {token.split()[-1]}"}
+            headers={"Authorization": f"Bearer {token.split()[-1]}"},
+            cookies=request.cookies,
         )
 
-    if response.status_code == 200:
-        return response.json()
-    raise HTTPException(status_code=response.status_code, detail="Error obteniendo usuario actual")
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )
 
 @router.post("/users/", dependencies=[Depends(admin_required)])
 async def create_user(request: Request):
@@ -29,13 +32,26 @@ async def create_user(request: Request):
     token = request.headers.get("Authorization")
     data = await request.json()
 
+    xsrf = request.headers.get("X-CSRF-Token")
+    headers = {"Authorization": f"Bearer {token.split()[-1]}"}
+    if xsrf:
+        headers["X-CSRF-Token"] = xsrf
+
     async with httpx.AsyncClient() as client:
-        response = await client.post(f"{settings.full_django_api_url}/users/", json=data, headers={"Authorization": f"Bearer {token.split()[-1]}"})
+        response = await client.post(
+            f"{settings.full_django_api_url}/users/",
+            json=data,
+            headers=headers,
+            cookies=request.cookies,
+        )
 
     if response.status_code == 201:
         logging.info(f"Usuario creado: {data['username']}")
-        return response.json()
-    raise HTTPException(status_code=response.status_code, detail="Error creando usuario")
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )
 
 @router.get("/users/", dependencies=[Depends(admin_required)])
 async def get_users(request: Request):
@@ -43,9 +59,17 @@ async def get_users(request: Request):
     token = request.headers.get("Authorization")
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{settings.full_django_api_url}/users/", headers={"Authorization": f"Bearer {token.split()[-1]}"})
+        response = await client.get(
+            f"{settings.full_django_api_url}/users/",
+            headers={"Authorization": f"Bearer {token.split()[-1]}"},
+            cookies=request.cookies,
+        )
 
-    return response.json()
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )
 
 @router.put("/users/{user_id}/")
 async def update_user(user_id: str, request: Request, user=Depends(admin_required)):
@@ -56,20 +80,70 @@ async def update_user(user_id: str, request: Request, user=Depends(admin_require
     if user["role"] != "admin" and user["id"] != user_id:
         raise HTTPException(status_code=403, detail="No puedes modificar otros usuarios")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.put(f"{settings.full_django_api_url}/users/{user_id}/", json=data, headers={"Authorization": f"Bearer {token.split()[-1]}"})
+    xsrf = request.headers.get("X-CSRF-Token")
+    headers = {"Authorization": f"Bearer {token.split()[-1]}"}
+    if xsrf:
+        headers["X-CSRF-Token"] = xsrf
 
-    return response.json()
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            f"{settings.full_django_api_url}/users/{user_id}/",
+            json=data,
+            headers=headers,
+            cookies=request.cookies,
+        )
+
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )
+
+@router.patch("/users/{user_id}/")
+async def partial_update_user(user_id: str, request: Request, user=Depends(admin_required)):
+    """Actualizar parcialmente un usuario (solo admins)"""
+    token = request.headers.get("Authorization")
+    data = await request.json()
+    xsrf = request.headers.get("X-CSRF-Token")
+    headers = {"Authorization": f"Bearer {token.split()[-1]}"}
+    if xsrf:
+        headers["X-CSRF-Token"] = xsrf
+
+    async with httpx.AsyncClient() as client:
+        response = await client.patch(
+            f"{settings.full_django_api_url}/users/{user_id}/",
+            json=data,
+            headers=headers,
+            cookies=request.cookies,
+        )
+
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )
 
 @router.delete("/users/{user_id}/", dependencies=[Depends(admin_required)])
 async def delete_user(user_id: str, request: Request):
     """Eliminar usuario (solo admins)"""
     token = request.headers.get("Authorization")
 
+    xsrf = request.headers.get("X-CSRF-Token")
+    headers = {"Authorization": f"Bearer {token.split()[-1]}"}
+    if xsrf:
+        headers["X-CSRF-Token"] = xsrf
+
     async with httpx.AsyncClient() as client:
-        response = await client.delete(f"{settings.full_django_api_url}/users/{user_id}/", headers={"Authorization": f"Bearer {token.split()[-1]}"})
+        response = await client.delete(
+            f"{settings.full_django_api_url}/users/{user_id}/",
+            headers=headers,
+            cookies=request.cookies,
+        )
 
     if response.status_code == 204:
         logging.info(f"Usuario eliminado: {user_id}")
-        return {"message": "Usuario eliminado exitosamente"}
-    raise HTTPException(status_code=response.status_code, detail="Error eliminando usuario")
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type", "application/json"),
+    )

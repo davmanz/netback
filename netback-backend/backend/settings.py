@@ -66,6 +66,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     # Sessions must come before CsrfViewMiddleware and AuthenticationMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Nuestro middleware de doble-submit CSRF (valida X-CSRF-Token vs cookie XSRF-TOKEN)
+    "core.middleware.csrf_double_submit.CSRFDobleSubmitMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -201,6 +203,10 @@ CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cas
 # Security-related defaults (enable these in production via env vars)
 SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=not DEBUG, cast=bool)
 CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=not DEBUG, cast=bool)
+# Nombre de la cookie expuesta a JS para double-submit
+CSRF_COOKIE_NAME = config("CSRF_COOKIE_NAME", default="XSRF-TOKEN")
+CSRF_COOKIE_SAMESITE = config("CSRF_COOKIE_SAMESITE", default="Lax")
+
 #SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=not DEBUG, cast=bool)
 SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = config("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False, cast=bool)

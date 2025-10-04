@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
+import { getAccessToken } from './auth';
 import Dashboard from "./pages/Dashboard";
 import DeviceManagement from "./pages/DeviceManagement";
 import Layout from "./pages/Layout";
@@ -15,7 +16,7 @@ import ZabbixStatus from "./pages/ZabbixStatus";
 
 
 const PrivateRoute = ({ children }) => {
-  const token = localStorage.getItem("token"); // <-- cambiado aquí
+  const token = getAccessToken();
   return token ? children : <Navigate to="/" />;
 };
 

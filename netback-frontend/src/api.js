@@ -1,4 +1,5 @@
 import apiClient from "./apiClient";
+import { getAccessToken, setAccessToken, clearAuth } from "./auth";
 
 //const API_URL = "http://netback-proxy:8080";
 const API_URL = process.env.REACT_APP_API_URL || "/api";
@@ -16,17 +17,20 @@ export const login = async (username, password) => {
       password,
     });
 
-    if (response.data.access) {
-      const token = response.data.access;
-      localStorage.setItem("token", token); // Guardar JWT
+    // backend should set refresh cookie (httpOnly) and return access in body
+    if (response?.data?.access) {
+      setAccessToken(response.data.access);
 
       // Obtener datos del usuario autenticado
       const me = await apiClient.get(`/users/me/`);
 
       if (me.data && me.data.role) {
-        localStorage.setItem("role", me.data.role);
-        localStorage.setItem("user", JSON.stringify(me.data));
-
+        try {
+          localStorage.setItem("role", me.data.role);
+          localStorage.setItem("user", JSON.stringify(me.data));
+        } catch (e) {
+          // ignore storage errors
+        }
       }
     }
 
@@ -36,9 +40,23 @@ export const login = async (username, password) => {
   }
 };
 
-// Logout
-export const logout = () => {
-  localStorage.removeItem("token");
+// Logout: llamar al endpoint para que el backend/proxy borre las cookies,
+// luego limpiar el estado local (in-memory + localStorage).
+export const logout = async () => {
+  try {
+    // Intentar informar al servidor para que borre las cookies HttpOnly
+    await apiClient.post(`/token/logout/`);
+  } catch (e) {
+    // Ignorar errores de red/servidor; proceder a limpiar el cliente igualmente
+  }
+
+  try {
+    clearAuth();
+    localStorage.removeItem("role");
+    localStorage.removeItem("user");
+  } catch (e) {
+    // ignore
+  }
 };
 
 //**********************************************************
@@ -47,7 +65,7 @@ export const logout = () => {
 
 // Crear un nuevo usuario (Solo administradores)
 export const createUser = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -60,7 +78,7 @@ export const createUser = async (data) => {
 
 // Obtener todos los usuarios
 export const getUsers = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -73,7 +91,7 @@ export const getUsers = async () => {
 
 // Obtener un usuario por ID (?)
 export const getUserById = async (id) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -86,7 +104,7 @@ export const getUserById = async (id) => {
 
 // Actualizar usuario (Admins pueden editar cualquier usuario, viewers solo el suyo)
 export const updateUser = async (id, data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -99,7 +117,7 @@ export const updateUser = async (id, data) => {
 
 // Eliminar usuario (Solo administradores)
 export const deleteUser = async (id) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -115,7 +133,7 @@ export const deleteUser = async (id) => {
 //**********************************************************
 // Crear un nuevo dispositivo
 export const createDevice = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -134,7 +152,7 @@ export const createDevice = async (data) => {
 
 // Obtener todos los dispositivos
 export const getDevices = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -148,7 +166,7 @@ export const getDevices = async () => {
 
 // Obtener un solo dispositivo por ID
 export const getDeviceById = async (id) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -161,7 +179,7 @@ export const getDeviceById = async (id) => {
 
 // Actualizar un dispositivo
 export const updateDevice = async (id, data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -179,7 +197,7 @@ export const updateDevice = async (id, data) => {
 
 // Eliminar un dispositivo
 export const deleteDevice = async (id) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -196,7 +214,7 @@ export const deleteDevice = async (id) => {
 
 // Crear una nueva credencial Vault
 export const createVaultCredential = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -209,7 +227,7 @@ export const createVaultCredential = async (data) => {
 
 // Obtener todas las credenciales Vault
 export const getVaultCredentials = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -223,7 +241,7 @@ export const getVaultCredentials = async () => {
 
 // Actualizar una credencial Vault
 export const updateVaultCredential = async (id, data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -236,7 +254,7 @@ export const updateVaultCredential = async (id, data) => {
 
 // Eliminar una credencial Vault
 export const deleteVaultCredential = async (id) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -252,7 +270,7 @@ export const deleteVaultCredential = async (id) => {
 //**********************************************************
 // Obtener todas las marcas
 export const getManufacturers = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -269,7 +287,7 @@ export const getManufacturers = async () => {
 //**********************************************************
 // Obtener todos los tipos de dispositivos
 export const getDeviceTypes = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -287,7 +305,7 @@ export const getDeviceTypes = async () => {
 
 // Guardar un nuevo respaldo de un dispositivo
 export const createBackup = async (deviceId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -300,7 +318,7 @@ export const createBackup = async (deviceId) => {
 
 // Obtener lista de dispositivos con su último respaldo
 export const getLastBackups = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -313,7 +331,7 @@ export const getLastBackups = async () => {
 
 // Obtener historial de respaldos de un dispositivo
 export const getBackupHistory = async (deviceId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -326,7 +344,7 @@ export const getBackupHistory = async (deviceId) => {
 
 // Ver contenido de un respaldo
 export const getBackupDetails = async (backupId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -339,7 +357,7 @@ export const getBackupDetails = async (backupId) => {
 
 // Comparar dos respaldos específicos por ID
 export const compareSpecificBackups = async (backupOldId, backupNewId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -352,7 +370,7 @@ export const compareSpecificBackups = async (backupOldId, backupNewId) => {
 
 // Comparar los dos últimos respaldos de un dispositivo
 export const compareLastBackups = async (deviceId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -367,7 +385,7 @@ export const compareLastBackups = async (deviceId) => {
 // 🌍 Gestión de Países
 //**********************************************************
 export const createCountry = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -385,7 +403,7 @@ export const createCountry = async (data) => {
 };
 
 export const getCountries = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -401,7 +419,7 @@ export const getCountries = async () => {
 // 📍 Gestión de Sitios
 //**********************************************************
 export const createSite = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -419,7 +437,7 @@ export const createSite = async (data) => {
 };
 
 export const getSites = async (countryId = null) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -437,7 +455,7 @@ export const getSites = async (countryId = null) => {
 // 📍 Gestión de Áreas
 //**********************************************************
 export const getAreas = async (siteId = null, countryId = null) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -452,7 +470,7 @@ export const getAreas = async (siteId = null, countryId = null) => {
 };
 
 export const createArea = async (data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -474,7 +492,7 @@ export const createArea = async (data) => {
 //**********************************************************
 // Actualizar el horario del respaldo
 export const updateBackupSchedule = async (scheduledTime) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -488,7 +506,7 @@ export const updateBackupSchedule = async (scheduledTime) => {
 
 // Obtener el horario del respaldo
 export const getBackupSchedule = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -505,7 +523,7 @@ export const getBackupSchedule = async () => {
 //**********************************************************
 // Hacer ping a un dispositivo antes de crearlo
 export const pingDevice = async (ip) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return {
     success: false,
     message: "No hay token de autenticación"
@@ -545,7 +563,7 @@ export const pingDevice = async (ip) => {
 
 // Obtener todos los conjuntos de reglas
 export const getClassificationRules = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return [];
 
   try {
@@ -558,7 +576,7 @@ export const getClassificationRules = async () => {
 
 // Obtener un conjunto de reglas por ID
 export const getClassificationRuleById = async (ruleSetId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -571,7 +589,7 @@ export const getClassificationRuleById = async (ruleSetId) => {
 
 // Clasificar hosts desde Zabbix
 export const classifyFromZabbix = async (ruleSetId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -584,7 +602,7 @@ export const classifyFromZabbix = async (ruleSetId) => {
 
 // Clasificar hosts desde CSV
 export const classifyFromCSV = async (formData) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -601,7 +619,7 @@ export const classifyFromCSV = async (formData) => {
 
 // Guardar hosts clasificados seleccionados
 export const saveClassifiedHosts = async (payload) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {
@@ -619,7 +637,7 @@ export const saveClassifiedHosts = async (payload) => {
 
 // Crear o actualizar conjunto de reglas
 export const saveClassificationRuleSet = async (ruleSetId, data) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   const url = ruleSetId
@@ -639,7 +657,7 @@ export const saveClassificationRuleSet = async (ruleSetId, data) => {
 
 // Eliminar conjunto de reglas
 export const deleteClassificationRuleSet = async (ruleSetId) => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return false;
 
   try {
@@ -655,7 +673,7 @@ export const deleteClassificationRuleSet = async (ruleSetId) => {
 // 📡 Evaluacion conexion a zabbix
 //**********************************************************
 export const getZabbixStatus = async () => {
-  const token = localStorage.getItem("token");
+  const token = getAccessToken();
   if (!token) return null;
 
   try {

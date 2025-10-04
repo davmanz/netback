@@ -3,8 +3,15 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import (TokenObtainPairView,
-                                            TokenRefreshView)
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+from core.auth_views import (
+    CookieTokenObtainPairView,
+    CookieTokenRefreshView,
+    logout_view,
+)
 
 from core.views import (AreaViewSet, BackupDiffViewSet, BackupViewSet,
                         ClassificationRuleSetViewSet, CountryViewSet,
@@ -18,6 +25,7 @@ from core.views import (AreaViewSet, BackupDiffViewSet, BackupViewSet,
                         getBackupHistory, getBackupStatus, ping_device,
                         update_backup_schedule, zabbix_connectivity_status,
                         backupDeviceView,
+                        test_csrf_view,
                         )
 
 # Crear el router para la API
@@ -42,8 +50,9 @@ router.register(
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
-    path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("api/token/", CookieTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("api/token/refresh/", CookieTokenRefreshView.as_view(), name="token_refresh"),
+    path("api/token/logout/", logout_view, name="token_logout"),
     path("api/networkdevice/<uuid:pk>/command/", executeCommand, name="executeCommand"),
     path("api/networkdevice/<uuid:pk>/backup/", backupDeviceView, name="backupDevice"),
     path(
@@ -89,5 +98,6 @@ urlpatterns = [
     path("api/users/me/", UserSystemViewSet.as_view({"get": "me"}), name="user-me"),
     path("api/zabbix/status/", zabbix_connectivity_status, name="zabbix_status"),
     path("api/ping/", ping_device, name="ping_device"),
+    path("api/test-csrf/", test_csrf_view, name="test-csrf"),
     path('api/health/', HealthCheckView.as_view(permission_classes=[AllowAny]), name='health-check'),
 ]

@@ -564,6 +564,14 @@ def zabbix_connectivity_status(request):
         }
     )
 
+
+# Endpoint de prueba para validar CSRF double-submit
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def test_csrf_view(request):
+    """Endpoint simple que devuelve success si la petición llegó autenticada y pasó CSRF."""
+    return Response({"ok": True, "user": str(request.user)}, status=200)
+
 # **********************************************************
 # Clasificación de Hosts desde Zabbix
 # **********************************************************
