@@ -1,7 +1,7 @@
-import axios from "axios";
+import apiClient from "./apiClient";
 
 //const API_URL = "http://netback-proxy:8080";
-const API_URL = "/api";
+const API_URL = process.env.REACT_APP_API_URL || "/api";
 
 
 //**********************************************************
@@ -11,7 +11,7 @@ const API_URL = "/api";
 // Login y almacenamiento del token
 export const login = async (username, password) => {
   try {
-    const response = await axios.post(`${API_URL}/auth/login/`, {
+    const response = await apiClient.post(`/auth/login/`, {
       username,
       password,
     });
@@ -21,9 +21,7 @@ export const login = async (username, password) => {
       localStorage.setItem("token", token); // Guardar JWT
 
       // Obtener datos del usuario autenticado
-      const me = await axios.get(`${API_URL}/users/me/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const me = await apiClient.get(`/users/me/`);
 
       if (me.data && me.data.role) {
         localStorage.setItem("role", me.data.role);
@@ -53,9 +51,7 @@ export const createUser = async (data) => {
   if (!token) return false;
 
   try {
-    await axios.post(`${API_URL}/users/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.post(`/users/`, data);
     return true;
   } catch (error) {
     return false;
@@ -68,9 +64,7 @@ export const getUsers = async () => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/users/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/users/`);
     return response.data;
   } catch (error) {
     return [];
@@ -83,9 +77,7 @@ export const getUserById = async (id) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/users/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/users/${id}/`);
     return response.data;
   } catch (error) {
     return null;
@@ -98,9 +90,7 @@ export const updateUser = async (id, data) => {
   if (!token) return false;
 
   try {
-    await axios.put(`${API_URL}/users/${id}/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.put(`/users/${id}/`, data);
     return true;
   } catch (error) {
     return false;
@@ -113,9 +103,7 @@ export const deleteUser = async (id) => {
   if (!token) return false;
 
   try {
-    await axios.delete(`${API_URL}/users/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.delete(`/users/${id}/`);
     return true;
   } catch (error) {
     return false;
@@ -136,9 +124,7 @@ export const createDevice = async (data) => {
       vault_credential: data.vault_credential || null, // Si no se usa Vault, enviar null
     };
 
-    await axios.post(`${API_URL}/networkdevice/`, deviceData, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.post(`/networkdevice/`, deviceData);
 
     return true;
   } catch (error) {
@@ -152,9 +138,7 @@ export const getDevices = async () => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/networkdevice/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/networkdevice/`);
 
     return response.data;
   } catch (error) {
@@ -168,9 +152,7 @@ export const getDeviceById = async (id) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/networkdevice/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/networkdevice/${id}/`);
     return response.data;
   } catch (error) {
     return null;
@@ -187,9 +169,7 @@ export const updateDevice = async (id, data) => {
       ...data
     };
 
-    await axios.patch(`${API_URL}/networkdevice/${id}/`, deviceData, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.patch(`/networkdevice/${id}/`, deviceData);
 
     return true;
   } catch (error) {
@@ -203,9 +183,7 @@ export const deleteDevice = async (id) => {
   if (!token) return false;
 
   try {
-    await axios.delete(`${API_URL}/networkdevice/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.delete(`/networkdevice/${id}/`);
     return true;
   } catch (error) {
     return false;
@@ -222,9 +200,7 @@ export const createVaultCredential = async (data) => {
   if (!token) return false;
 
   try {
-    await axios.post(`${API_URL}/vaultcredentials/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.post(`/vaultcredentials/`, data);
     return true;
   } catch (error) {
     return false;
@@ -237,9 +213,7 @@ export const getVaultCredentials = async () => {
   if (!token) return [];
 
   try {
-    const response = await axios.get(`${API_URL}/vaultcredentials/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/vaultcredentials/`);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -253,9 +227,7 @@ export const updateVaultCredential = async (id, data) => {
   if (!token) return false;
 
   try {
-    await axios.put(`${API_URL}/vaultcredentials/${id}/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.put(`/vaultcredentials/${id}/`, data);
     return true;
   } catch (error) {
     return false;
@@ -268,9 +240,7 @@ export const deleteVaultCredential = async (id) => {
   if (!token) return false;
 
   try {
-    await axios.delete(`${API_URL}/vaultcredentials/${id}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.delete(`/vaultcredentials/${id}/`);
     return true;
   } catch (error) {
     return false;
@@ -286,9 +256,7 @@ export const getManufacturers = async () => {
   if (!token) return [];
 
   try {
-    const response = await axios.get(`${API_URL}/manufacturers/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/manufacturers/`);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -305,9 +273,7 @@ export const getDeviceTypes = async () => {
   if (!token) return [];
 
   try {
-    const response = await axios.get(`${API_URL}/devicetypes/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/devicetypes/`);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -325,9 +291,7 @@ export const createBackup = async (deviceId) => {
   if (!token) return false;
 
   try {
-    const response = await axios.post(`${API_URL}/networkdevice/${deviceId}/backup/`, {}, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.post(`/networkdevice/${deviceId}/backup/`, {});
     return response.data;
   } catch (error) {
     return false;
@@ -340,9 +304,7 @@ export const getLastBackups = async () => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/backups_last/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/backups_last/`);
     return response.data;
   } catch (error) {
     return null;
@@ -355,9 +317,7 @@ export const getBackupHistory = async (deviceId) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/networkdevice/${deviceId}/backups/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/networkdevice/${deviceId}/backups/`);
     return response.data;
   } catch (error) {
     return null;
@@ -370,9 +330,7 @@ export const getBackupDetails = async (backupId) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/backup/${backupId}/`, {  // <-- Ruta corregida
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/backup/${backupId}/`);  // <-- Ruta corregida
     return response.data;
   } catch (error) {
     return null;
@@ -385,9 +343,7 @@ export const compareSpecificBackups = async (backupOldId, backupNewId) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/backups/compare/${backupOldId}/${backupNewId}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/backups/compare/${backupOldId}/${backupNewId}/`);
     return response.data;
   } catch (error) {
     return null;
@@ -400,9 +356,7 @@ export const compareLastBackups = async (deviceId) => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/networkdevice/${deviceId}/compare/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/networkdevice/${deviceId}/compare/`);
     return response.data;
   } catch (error) {
     return null;
@@ -422,9 +376,7 @@ export const createCountry = async (data) => {
       return null;
     }
 
-    const response = await axios.post(`${API_URL}/countries/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.post(`/countries/`, data);
 
     return response.data;
   } catch (error) {
@@ -437,9 +389,7 @@ export const getCountries = async () => {
   if (!token) return [];
 
   try {
-    const response = await axios.get(`${API_URL}/countries/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/countries/`);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -460,9 +410,7 @@ export const createSite = async (data) => {
       return null;
     }
 
-    const response = await axios.post(`${API_URL}/sites/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.post(`/sites/`, data);
 
     return response.data;
   } catch (error) {
@@ -475,12 +423,9 @@ export const getSites = async (countryId = null) => {
   if (!token) return [];
 
   try {
-    let url = `${API_URL}/sites/`;
-    if (countryId) url += `?country_id=${countryId}`;
-
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // Use relative path and params to avoid double /api when baseURL is set to /api
+    const params = countryId ? { params: { country_id: countryId } } : {};
+    const response = await apiClient.get(`/sites/`, params);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -496,13 +441,9 @@ export const getAreas = async (siteId = null, countryId = null) => {
   if (!token) return [];
 
   try {
-    let url = `${API_URL}/areas/`;
-    if (siteId) url += `?site_id=${siteId}`;
-    else if (countryId) url += `?country_id=${countryId}`;
-
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // Use relative path and params to avoid double /api when baseURL is set to /api
+    const params = siteId ? { params: { site_id: siteId } } : (countryId ? { params: { country_id: countryId } } : {});
+    const response = await apiClient.get(`/areas/`, params);
 
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -520,9 +461,7 @@ export const createArea = async (data) => {
       return null;
     }
 
-    const response = await axios.post(`${API_URL}/areas/`, data, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.post(`/areas/`, data);
 
     return response.data;
   } catch (error) {
@@ -539,11 +478,7 @@ export const updateBackupSchedule = async (scheduledTime) => {
   if (!token) return null;
 
   try {
-    const response = await axios.post(
-      `${API_URL}/backup-config/schedule/`,
-      { scheduled_time: scheduledTime },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const response = await apiClient.post(`/backup-config/schedule/`, { scheduled_time: scheduledTime });
 
     return response.data;
   } catch (error) {
@@ -557,9 +492,7 @@ export const getBackupSchedule = async () => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/backup-config/schedule/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/backup-config/schedule/`);
 
     return response.data;
   } catch (error) {
@@ -579,9 +512,7 @@ export const pingDevice = async (ip) => {
   };
 
   try {
-    const response = await axios.post(`${API_URL}/ping/`, { ip }, { 
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.post(`/ping/`, { ip });
 
     // Si la respuesta es exitosa
     if (response.data.status === "success") {
@@ -618,9 +549,7 @@ export const getClassificationRules = async () => {
   if (!token) return [];
 
   try {
-    const res = await axios.get(`${API_URL}/classification-rules/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiClient.get(`/classification-rules/`);
     return res.data;
   } catch (err) {
     return [];
@@ -633,9 +562,7 @@ export const getClassificationRuleById = async (ruleSetId) => {
   if (!token) return null;
 
   try {
-    const res = await axios.get(`${API_URL}/classification-rules/${ruleSetId}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiClient.get(`/classification-rules/${ruleSetId}/`);
     return res.data;
   } catch (err) {
     return null;
@@ -648,13 +575,7 @@ export const classifyFromZabbix = async (ruleSetId) => {
   if (!token) return null;
 
   try {
-    const res = await axios.post(
-      `${API_URL}/networkdevice/bulk/from-zabbix/`,
-      { ruleSetId },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
+    const res = await apiClient.post(`/networkdevice/bulk/from-zabbix/`, { ruleSetId });
     return res.data;
   } catch (err) {
     return null;
@@ -667,9 +588,8 @@ export const classifyFromCSV = async (formData) => {
   if (!token) return null;
 
   try {
-    const res = await axios.post(`${API_URL}/networkdevice/bulk/from-csv/`, formData, {
+    const res = await apiClient.post(`/networkdevice/bulk/from-csv/`, formData, {
       headers: {
-        Authorization: `Bearer ${token}`,
         "Content-Type": "multipart/form-data",
       },
     });
@@ -685,9 +605,7 @@ export const saveClassifiedHosts = async (payload) => {
   if (!token) return null;
 
   try {
-    const res = await axios.post(`${API_URL}/networkdevice/bulk/save/`, payload, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiClient.post(`/networkdevice/bulk/save/`, payload);
     return res.data;
   } catch (err) {
     return null;
@@ -705,13 +623,13 @@ export const saveClassificationRuleSet = async (ruleSetId, data) => {
   if (!token) return null;
 
   const url = ruleSetId
-    ? `${API_URL}/classification-rules/${ruleSetId}/`
-    : `${API_URL}/classification-rules/`;
+    ? `/classification-rules/${ruleSetId}/`
+    : `/classification-rules/`;
 
   try {
     const response = ruleSetId
-      ? await axios.put(url, data, { headers: { Authorization: `Bearer ${token}` } })
-      : await axios.post(url, data, { headers: { Authorization: `Bearer ${token}` } });
+      ? await apiClient.put(url, data)
+      : await apiClient.post(url, data);
 
     return response.data;
   } catch (error) {
@@ -725,9 +643,7 @@ export const deleteClassificationRuleSet = async (ruleSetId) => {
   if (!token) return false;
 
   try {
-    await axios.delete(`${API_URL}/classification-rules/${ruleSetId}/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await apiClient.delete(`/classification-rules/${ruleSetId}/`);
     return true;
   } catch (error) {
     return false;
@@ -743,9 +659,7 @@ export const getZabbixStatus = async () => {
   if (!token) return null;
 
   try {
-    const response = await axios.get(`${API_URL}/zabbix/status/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await apiClient.get(`/zabbix/status/`);
     return response.data;
   } catch (error) {
     return null;

@@ -31,6 +31,7 @@ from .serializers import (AreaSerializer, BackupDiffSerializer,
                           ManufacturerSerializer, NetworkDeviceSerializer,
                           SiteSerializer, UserSystemSerializer,
                           VaultCredentialSerializer)
+from utils.ping import ping_ip
 
 
 # **********************************************************
@@ -38,7 +39,6 @@ from .serializers import (AreaSerializer, BackupDiffSerializer,
 # **********************************************************
 class UserSystemViewSet(viewsets.ModelViewSet):
     """API para gestionar usuarios"""
-
     queryset = UserSystem.objects.all()
     serializer_class = UserSystemSerializer
 
@@ -80,18 +80,12 @@ class VaultCredentialViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOperator]
 
 
-# **********************************************************
-# 📍 Vista para Países
-# **********************************************************
 class CountryViewSet(viewsets.ModelViewSet):
     queryset = Country.objects.all().order_by("name")
     serializer_class = CountrySerializer
     permission_classes = [IsAuthenticated]
 
 
-# **********************************************************
-# 📍 Vista para Sitios
-# **********************************************************
 class SiteViewSet(viewsets.ModelViewSet):
     serializer_class = SiteSerializer
     permission_classes = [IsAuthenticated]
@@ -103,7 +97,6 @@ class SiteViewSet(viewsets.ModelViewSet):
         if country_id:
             queryset = queryset.filter(country__id=country_id)
         return queryset
-
 
 # **********************************************************
 # 📍 Vista para Áreas
@@ -437,95 +430,37 @@ def ping_device(request):
     """Ejecuta un ping a un dispositivo desde el servidor"""
     ip = request.data.get("ip")
 
-    # Validación mejorada de IP
-    if not ip or not is_valid_ip(ip):
-        return Response(
-            {
-                "status": "error", 
-                "message": "Debes proporcionar una dirección IP válida."
-            },
-            status=400,
-        )
+    if not ip:
+        return Response({"status": "error", "message": "Debes proporcionar una dirección IP válida."}, status=400)
 
     try:
-        result = subprocess.run(
-            ["ping", "-c", "2", "-W", "2", ip],  # Timeout por paquete de 2 segundos
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        ping_result = ping_ip(ip)
 
-        # Analizar la salida para información más detallada
-        output = result.stdout.lower()
-
-        if result.returncode == 0:
-            # Extraer estadísticas del ping
-            stats = parse_ping_stats(output)
+        if ping_result.get("reachable"):
             return Response({
                 "status": "success",
                 "data": {
                     "ip": ip,
                     "reachable": True,
                     "message": "✅ Dispositivo activo",
-                    "stats": stats
-                }
-            })
-        else:
-            # Determinar tipo específico de fallo
-            error_msg = "❌ No se pudo alcanzar el dispositivo"
-            if "unknown host" in output:
-                error_msg = "❌ Host desconocido"
-            elif "network is unreachable" in output:
-                error_msg = "❌ Red inalcanzable"
-
-            return Response({
-                "status": "error",
-                "data": {
-                    "ip": ip,
-                    "reachable": False,
-                    "message": error_msg
+                    "stats": ping_result.get("stats", {}),
                 }
             })
 
-    except subprocess.TimeoutExpired:
-        return Response(
-            {
-                "status": "error",
-                "message": "⌛ Tiempo de espera agotado al intentar alcanzar el dispositivo"
-            },
-            status=408
-        )
+        # No reachable -> map error codes to messages expected by frontend
+        error = ping_result.get("error")
+        message = "❌ No se pudo alcanzar el dispositivo"
+        if error == "unknown_host":
+            message = "❌ Host desconocido"
+        elif error == "network_unreachable":
+            message = "❌ Red inalcanzable"
+        elif error == "timeout":
+            return Response({"status": "error", "message": "⌛ Tiempo de espera agotado al intentar alcanzar el dispositivo"}, status=408)
+
+        return Response({"status": "error", "data": {"ip": ip, "reachable": False, "message": message}})
+
     except Exception as e:
-        return Response(
-            {
-                "status": "error",
-                "message": f"⚠ Error al ejecutar ping: {str(e)}"
-            },
-            status=500
-        )
-
-def is_valid_ip(ip):
-    """Valida que la IP tenga un formato correcto"""
-    try:
-        parts = ip.split('.')
-        return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
-    except (AttributeError, TypeError, ValueError):
-        return False
-
-def parse_ping_stats(output):
-    """Extrae estadísticas del resultado del ping"""
-    try:
-        # Buscar la línea de estadísticas
-        stats_line = [line for line in output.split('\n') if 'packets transmitted' in line][0]
-        transmitted = int(stats_line.split()[0])
-        received = int(stats_line.split()[3])
-        return {
-            "transmitted": transmitted,
-            "received": received,
-            "loss_percentage": ((transmitted - received) / transmitted) * 100
-        }
-    except (IndexError, ValueError):
-        return {}
+        return Response({"status": "error", "message": f"⚠ Error al ejecutar ping: {str(e)}"}, status=500)
 
 
 # **********************************************************

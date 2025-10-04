@@ -33,6 +33,7 @@ coverage/
 # ==============================
 *.pyc
 *.pyo
+*.py
 __pycache__/
 media/
 staticfiles/

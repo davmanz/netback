@@ -1,4 +1,4 @@
-from django.test import SimpleTestCase, override_settings
+from django.test import TestCase, override_settings
 from utils.env import get_fernet
 from cryptography.fernet import Fernet
 from django.test import TestCase
@@ -6,7 +6,7 @@ from .models import VaultCredential, Manufacturer, DeviceType, Area, NetworkDevi
 from .serializers import NetworkDeviceSerializer
 
 
-class CryptoHelperTests(SimpleTestCase):
+class CryptoHelperTests(TestCase):
 	def test_get_fernet_none_when_key_missing(self):
 		with override_settings(ENCRYPTION_KEY_VAULT=None):
 			f = get_fernet()

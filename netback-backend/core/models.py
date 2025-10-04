@@ -1,5 +1,6 @@
 # from django.contrib.auth.hashers import make_password, check_password
 import uuid
+import logging
 from django.contrib.auth.models import (AbstractBaseUser, BaseUserManager,PermissionsMixin)
 from django.db import models
 from utils.env import get_encryption_cipher, get_fernet
@@ -132,11 +133,30 @@ class VaultCredential(models.Model):
 
     @staticmethod
     def _get_cipher():
-        # Mantener compatibilidad con la función preexistente pero usar el helper tolerante
+        """Obtener un objeto Fernet para cifrar/descifrar.
+
+        Comportamiento tolerante: devuelve None si no hay clave válida o
+        si la clave está malformada. Esto permite que los llamadores manejen
+        el caso explicitamente (por ejemplo lanzando RuntimeError en save()).
+
+        Se registra (logger.debug) la razón cuando devolvemos None para
+        facilitar debugging en entornos productivos.
+        """
+        logger = logging.getLogger(__name__)
+
+        # Primero intentar el helper tolerante
         cipher = get_fernet()
         if cipher:
             return cipher
-        return get_encryption_cipher()
+
+        # Intentar obtener el cifrador estricto, pero no propagar la excepción.
+        try:
+            return get_encryption_cipher()
+        except Exception as e:
+            # Registrar la causa (clave ausente o inválida). Nivel DEBUG para no
+            # llenar logs en producción salvo que se quiera diagnosticar.
+            logger.debug("_get_cipher: no se pudo obtener cifrador: %s", e)
+            return None
 
     def save(self, *args, **kwargs):
         """Cifra la contraseña antes de guardarla en la base de datos"""

@@ -1,1 +1,216 @@
-# Netback — Backend (Django REST API)\n\nAPI REST para **gestión de dispositivos de red y respaldos**. Incluye autenticación **JWT**, ejecución de comandos vía **Netmiko**, tareas en segundo plano con **Celery**/**Redis** y persistencia en **PostgreSQL**.\n\n---\n\n## 🧭 ¿Qué hace?\n- **Usuarios y roles**: _admin_, _operator_, _viewer_.\n- **Inventario**: fabricantes, tipos de dispositivo, países, sitios, áreas y dispositivos.\n- **Respaldos**: obtención de `running-config` y `vlan brief`, deduplicación por _checksum_, historial y **comparación estructurada** entre respaldos.\n- **Automatización**: _scheduler_ diario/con hora configurable con **Celery**.\n- **Diagnóstico**: ejecución de comandos y **ping** desde el servidor.\n- **Integración Zabbix**: clasificación/ingesta de hosts por reglas.\n\n---\n\n## 🏗️ Stack & Dependencias\n- **Python 3.13**, **Django 5**, **Django REST Framework**\n- **JWT (SimpleJWT)**\n- **PostgreSQL** (psycopg2-binary)\n- **Celery 5** + **Redis** (django-celery-beat / django-celery-results)\n- **Netmiko** (con `ntc_templates`)\n- **cryptography.Fernet** para cifrar credenciales en _VaultCredential_\n\n> Ver `requirements.txt` para el detalle de librerías.\n\n---\n\n## 🔌 Endpoints principales\nRuta base: `/api/`\n\n- **Auth**\n  - `POST /api/token/` — obtener `access` y `refresh`\n  - `POST /api/token/refresh/` — renovar `access`\n  - `GET  /api/users/me/` — perfil del usuario autenticado\n\n- **Usuarios** (`/api/users/` — _admin_ requerido para crear/eliminar)\n\n- **Ubicación**\n  - `countries`, `sites`, `areas` — filtros por `?country_id=` / `?site_id=`\n\n- **Dispositivos** (`/api/networkdevice/`)\n  - `GET` (_viewer_+), `POST` (_operator_+), `PUT/PATCH/DELETE` (_admin_)\n  - Acciones:\n    - `POST /api/networkdevice/{uuid}/command/` — ejecutar comando Netmiko\n    - `POST /api/networkdevice/{uuid}/backup/` — forzar respaldo\n    - `GET  /api/networkdevice/{uuid}/backups/` — historial\n    - `GET  /api/networkdevice/{uuid}/compare/` — comparar 2 últimos\n    - `GET  /api/backups/compare/{old}/{new}/` — comparar por IDs\n\n- **Backups**\n  - `GET  /api/backups/last/` — último backup por dispositivo\n\n- **Estado y salud**\n  - `GET  /api/networkdevice/{uuid}/status/` — estados de backup\n  - `GET  /api/health/` — _healthcheck_ del backend (público)\n\n- **Zabbix & Clasificación** (solo _admin_)\n  - `POST /api/networkdevice/bulk/from-zabbix/` — clasificar hosts desde Zabbix\n  - `POST /api/networkdevice/bulk/from-csv/` — clasificar desde CSV\n  - `POST /api/networkdevice/bulk/save/` — persistir clasificados\n  - `GET  /api/zabbix/status/` — ping + conectividad a API Zabbix\n\n- **Programación de backups** (solo _admin_)\n  - `POST /api/backup-config/schedule/` — setear hora `HH:MM`\n  - `GET  /api/backup-config/schedule/get/` — obtener hora vigente\n\n---\n\n## 🗃️ Modelos clave\n- `UserSystem` (usuario, `role`)\n- `VaultCredential` (usuario/clave cifrados con **Fernet**)\n- `Manufacturer` (comandos y `netmiko_type`)\n- `DeviceType`, `Country`, `Site`, `Area`\n- `NetworkDevice` (hostname, IP, fabricante, tipo, credencial)\n- `Backup` (runningConfig, vlanBrief, checksum)\n- `BackupDiff` (dif estructurado por secciones y VLAN)\n- `BackupStatus` (eventos in_progress/completed/failed)\n- `BackupSchedule` (hora programada)\n- `BackupStatusTracker` (`success|unchanged|error`, contadores)\n\n---\n\n## 🧰 Tareas y Scheduler (Celery)\n- Tarea periódica: `core.tasks.autoBackup` — ejecuta respaldos cuando la hora actual coincide con `BackupSchedule`.\n- _Beat_: puedes usar **DatabaseScheduler** (via `django_celery_beat`) o el `beat_schedule` definido en `backend/celery.py` (si no usas DatabaseScheduler).\n\n> Si usas DatabaseScheduler, crea una **PeriodicTask** por admin/command para llamar `core.tasks.autoBackup` cada minuto.\n\n---\n\n## ⚙️ Variables de entorno (ejemplo)\n```\n# Django / Seguridad\nSECRET_KEY=...\nTIME_ZONE=America/Santiago\nALLOWED_HOSTS=netback-backend,localhost\n\n# Base de datos\nPOSTGRES_DB=netback\nPOSTGRES_USER=netback\nPOSTGRES_PASSWORD=netback\nPOSTGRES_HOST=postgres\nPOSTGRES_PORT=5432\n\n# Celery / Redis\nCELERY_BROKER_URL=redis://redis:6379/0\n\n# Zabbix\nZABBIX_URL=https://zabbix.example.com\nZABBIX_TOKEN=xxxxx\n\n# Cifrado credenciales VaultCredential\nENCRYPTION_KEY_VAULT=&lt;clave_fernet_base64&gt;\n\n# CORS (si aplica)\nCORS_ALLOWED_ORIGINS=http://localhost\n```\n\n---\n\n## ▶️ Cómo ejecutar\n### Docker Compose (recomendado)\n1) Crear archivo `.env` en `netback-env/` (ver ejemplo arriba).\n2) Levantar servicios desde la raíz del repo:\n```bash\ndocker compose up -d --build\n```\nServicios: `postgres`, `redis`, `backend`, `celery`, `celery-beat`, `proxy`, `frontend`.\n\n### Local (desarrollo)\n```bash\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\nexport $(cat ../netback-env/.env | xargs)\npython manage.py migrate\npython manage.py runserver 0.0.0.0:8000\n# Celery\ncelery -A backend worker --loglevel=info\ncelery -A backend beat --loglevel=info  # si usas beat en código, omite DatabaseScheduler\n```\n\n---\n\n## 🔍 Healthchecks / Diagnóstico\n- Backend: `GET /api/health/`\n- Ping dispositivo: `POST /api/ping/` body: `{ \"ip\": \"8.8.8.8\" }`\n- Últimos backups: `GET /api/backups/last/`\n- Comparaciones: `GET /api/networkdevice/{uuid}/compare/`\n\n---\n\n## 🔐 Permisos & Seguridad\n- **Roles**:\n  - _admin_: CRUD completo, configura horarios y Zabbix.\n  - _operator_: crear dispositivos y ejecutar backups manuales.\n  - _viewer_: solo lectura.\n- **JWT** obligatorio salvo `/api/health/`.\n- **Credenciales**:\n  - Preferir `VaultCredential` (cifrado **Fernet** mediante `ENCRYPTION_KEY_VAULT`).\n  - Evitar `customPass` en texto plano (si se usa, considerar cifrarlo).\n\n---\n\n## 🗂️ Estructura de proyecto (parcial)\n```\nnetback-backend/\n├─ backend/\n│  ├─ settings.py\n│  ├─ urls.py\n│  ├─ celery.py\n├─ core/\n│  ├─ models.py\n│  ├─ views.py\n│  ├─ serializers.py\n│  ├─ tasks.py\n│  └─ network_util/\n│     ├─ backup.py\n│     ├─ comparison.py\n│     ├─ executor.py\n│     └─ vlan_parser.py\n├─ utils/\n│  ├─ env.py\n│  └─ zabbix_manager.py\n├─ entrypoint.sh\n├─ Dockerfile\n└─ requirements.txt\n```\n\n---\n\n## 📒 Notas relevantes\n- **Zona horaria** válida: `America/Santiago`.\n- Si usas **django_celery_beat** como scheduler, asegúrate de crear la `PeriodicTask` correspondiente.\n- El servicio `proxy` expone `/api/*` hacia este backend (no es necesario habilitar CORS si todo el tráfico viene por el proxy y Nginx del frontend).\n\n---\n\n## Licencia\nProyecto interno Netback. Uso restringido.
+# Netback — Backend (Django REST API)
+
+API REST para **gestión de dispositivos de red y respaldos**. Incluye autenticación **JWT**, ejecución de comandos vía **Netmiko**, tareas en segundo plano con **Celery**/**Redis** y persistencia en **PostgreSQL**.
+
+---
+
+## 🧭 ¿Qué hace?
+- **Usuarios y roles**: _admin_, _operator_, _viewer_.
+- **Inventario**: fabricantes, tipos de dispositivo, países, sitios, áreas y dispositivos.
+- **Respaldos**: obtención de `running-config` y `vlan brief`, deduplicación por _checksum_, historial y **comparación estructurada** entre respaldos.
+- **Automatización**: _scheduler_ diario/con hora configurable con **Celery**.
+- **Diagnóstico**: ejecución de comandos y **ping** desde el servidor.
+- **Integración Zabbix**: clasificación/ingesta de hosts por reglas.
+
+---
+
+## 🏗️ Stack & Dependencias
+- **Python 3.13**, **Django 5**, **Django REST Framework**
+- **JWT (SimpleJWT)**
+- **PostgreSQL** (psycopg2-binary)
+- **Celery 5** + **Redis** (django-celery-beat / django-celery-results)
+- **Netmiko** (con `ntc_templates`)
+- **cryptography.Fernet** para cifrar credenciales en _VaultCredential_
+
+> Ver `requirements.txt` para el detalle de librerías.
+
+---
+
+## 🔌 Endpoints principales
+Ruta base: `/api/`
+
+- **Auth**
+  - `POST /api/token/` — obtener `access` y `refresh`
+  - `POST /api/token/refresh/` — renovar `access`
+  - `GET  /api/users/me/` — perfil del usuario autenticado
+
+- **Usuarios** (`/api/users/` — _admin_ requerido para crear/eliminar)
+
+- **Ubicación**
+  - `countries`, `sites`, `areas` — filtros por `?country_id=` / `?site_id=`
+
+- **Dispositivos** (`/api/networkdevice/`)
+  - `GET` (_viewer_+), `POST` (_operator_+), `PUT/PATCH/DELETE` (_admin_)
+  - Acciones:
+    - `POST /api/networkdevice/{uuid}/command/` — ejecutar comando Netmiko
+    - `POST /api/networkdevice/{uuid}/backup/` — forzar respaldo
+    - `GET  /api/networkdevice/{uuid}/backups/` — historial
+    - `GET  /api/networkdevice/{uuid}/compare/` — comparar 2 últimos
+    - `GET  /api/backups/compare/{old}/{new}/` — comparar por IDs
+
+- **Backups**
+  - `GET  /api/backups/last/` — último backup por dispositivo
+
+- **Estado y salud**
+  - `GET  /api/networkdevice/{uuid}/status/` — estados de backup
+  - `GET  /api/health/` — _healthcheck_ del backend (público)
+
+- **Zabbix & Clasificación** (solo _admin_)
+  - `POST /api/networkdevice/bulk/from-zabbix/` — clasificar hosts desde Zabbix
+  - `POST /api/networkdevice/bulk/from-csv/` — clasificar desde CSV
+  - `POST /api/networkdevice/bulk/save/` — persistir clasificados
+  - `GET  /api/zabbix/status/` — ping + conectividad a API Zabbix
+
+- **Programación de backups** (solo _admin_)
+  - `POST /api/backup-config/schedule/` — setear hora `HH:MM`
+  - `GET  /api/backup-config/schedule/get/` — obtener hora vigente
+
+---
+
+## 🗃️ Modelos clave
+- `UserSystem` (usuario, `role`)
+- `VaultCredential` (usuario/clave cifrados con **Fernet**)
+- `Manufacturer` (comandos y `netmiko_type`)
+- `DeviceType`, `Country`, `Site`, `Area`
+- `NetworkDevice` (hostname, IP, fabricante, tipo, credencial)
+- `Backup` (runningConfig, vlanBrief, checksum)
+- `BackupDiff` (dif estructurado por secciones y VLAN)
+- `BackupStatus` (eventos in_progress/completed/failed)
+- `BackupSchedule` (hora programada)
+- `BackupStatusTracker` (`success|unchanged|error`, contadores)
+
+---
+
+## 🧰 Tareas y Scheduler (Celery)
+- Tarea periódica: `core.tasks.autoBackup` — ejecuta respaldos cuando la hora actual coincide con `BackupSchedule`.
+- _Beat_: puedes usar **DatabaseScheduler** (via `django_celery_beat`) o el `beat_schedule` definido en `backend/celery.py` (si no usas DatabaseScheduler).
+
+> Si usas DatabaseScheduler, crea una **PeriodicTask** por admin/command para llamar `core.tasks.autoBackup` cada minuto.
+
+---
+
+## ⚙️ Variables de entorno (ejemplo)
+```
+# Django / Seguridad
+SECRET_KEY=...
+TIME_ZONE=America/Santiago
+ALLOWED_HOSTS=netback-backend,localhost
+
+# Base de datos
+POSTGRES_DB=netback
+POSTGRES_USER=netback
+POSTGRES_PASSWORD=netback
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+# Celery / Redis
+CELERY_BROKER_URL=redis://redis:6379/0
+
+# Zabbix
+ZABBIX_URL=https://zabbix.example.com
+ZABBIX_TOKEN=xxxxx
+
+# Cifrado credenciales VaultCredential
+ENCRYPTION_KEY_VAULT=<clave_fernet_base64>
+
+# CORS (si aplica)
+CORS_ALLOWED_ORIGINS=http://localhost
+```
+
+---
+
+## ▶️ Cómo ejecutar
+### Docker Compose (recomendado)
+1) Crear archivo `.env` en `netback-env/` (ver ejemplo arriba).
+2) Levantar servicios desde la raíz del repo:
+```bash
+docker compose up -d --build
+```
+Servicios: `postgres`, `redis`, `backend`, `celery`, `celery-beat`, `proxy`, `frontend`.
+
+### Local (desarrollo)
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export $(cat ../netback-env/.env | xargs)
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
+# Celery
+celery -A backend worker --loglevel=info
+celery -A backend beat --loglevel=info  # si usas beat en código, omite DatabaseScheduler
+```
+
+---
+
+## 🔍 Healthchecks / Diagnóstico
+- Backend: `GET /api/health/`
+- Ping dispositivo: `POST /api/ping/` body: `{ "ip": "8.8.8.8" }`
+- Últimos backups: `GET /api/backups/last/`
+- Comparaciones: `GET /api/networkdevice/{uuid}/compare/`
+
+---
+
+## 🔐 Permisos & Seguridad
+- **Roles**:
+  - _admin_: CRUD completo, configura horarios y Zabbix.
+  - _operator_: crear dispositivos y ejecutar backups manuales.
+  - _viewer_: solo lectura.
+- **JWT** obligatorio salvo `/api/health/`.
+- **Credenciales**:
+  - Preferir `VaultCredential` (cifrado **Fernet** mediante `ENCRYPTION_KEY_VAULT`).
+  - Evitar `customPass` en texto plano (si se usa, considerar cifrarlo).
+
+---
+
+## 🗂️ Estructura de proyecto (parcial)
+```
+netback-backend/
+├─ backend/
+│  ├─ settings.py
+│  ├─ urls.py
+│  ├─ celery.py
+├─ core/
+│  ├─ models.py
+│  ├─ views.py
+│  ├─ serializers.py
+│  ├─ tasks.py
+│  └─ network_util/
+│     ├─ backup.py
+│     ├─ comparison.py
+│     ├─ executor.py
+│     └─ vlan_parser.py
+├─ utils/
+│  ├─ env.py
+│  └─ zabbix_manager.py
+├─ entrypoint.sh
+├─ Dockerfile
+└─ requirements.txt
+```
+
+---
+
+## 🧪 Tests
+- Ubicación de tests: `core/test_suite/` (evita colisiones con paquetes globales llamados `tests`).
+- Ejecutar todos los tests:
+  - `python manage.py test core.test_suite -v 2`
+- Ejecutar por módulo:
+  - `python manage.py test core.test_suite.test_models_crud -v 2`
+  - `python manage.py test core.test_suite.test_endpoints_signals -v 2`
+  - `python manage.py test core.test_suite.test_ping -v 2`
+  - `python manage.py test core.test_suite.test_autobackup_schedule -v 2`
+- Atajos opcionales (re-export):
+  - `python manage.py test core.tests_crud`
+  - `python manage.py test core.tests_endpoints`
+- Nota: Evita `python manage.py test core` si tu entorno tiene instalado un paquete llamado "tests", ya que interfiere con el discovery estándar de unittest.
+
+---
+
+## 📒 Notas relevantes
+- **Zona horaria** válida: `America/Santiago`.
+- Si usas **django_celery_beat** como scheduler, asegúrate de crear la `PeriodicTask` correspondiente.
+- El servicio `proxy` expone `/api/*` hacia este backend (no es necesario habilitar CORS si todo el tráfico viene por el proxy y Nginx del frontend).
+
+---
+
+## Licencia
+Proyecto interno Netback. Uso restringido.
