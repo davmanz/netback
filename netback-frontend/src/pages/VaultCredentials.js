@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import { Add, Edit, Delete, FileDownload } from "@mui/icons-material";
 import VaultCredentialForm from "./modals/VaultCredentials/VaultCredentialForm";
-import {ConfirmDialog} from "../components/common/ConfirmDialog";
+import ConfirmDialog from "../components/common/ConfirmDialog";
 
 
 const VaultCredentials = () => {

@@ -152,17 +152,11 @@ export const getDevices = async () => {
   if (!token) return null;
 
   try {
-    const response = await fetch(`${API_URL}/networkdevice/`, {
+    const response = await axios.get(`${API_URL}/networkdevice/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      throw new Error("Error obteniendo dispositivos");
-    }
-
-    let devices = await response.json();
-
-    return devices;
+    return response.data;
   } catch (error) {
     return null;
   }

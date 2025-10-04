@@ -131,7 +131,7 @@ const Login = () => {
     try {
       const data = await login(formData.username, formData.password);
       if (data && data.access) {
-        sessionStorage.setItem("token", data.access);
+        localStorage.setItem("token", data.access);
         navigate("/dashboard");
       } else {
         throw new Error("Credenciales inválidas");
